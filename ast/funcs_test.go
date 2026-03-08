@@ -89,6 +89,8 @@ func TestScalars(t *testing.T) {
 		{&ast.Ceil{}, "ceil"},
 		{&ast.Floor{}, "floor"},
 		{&ast.Now{}, "now"},
+		{&ast.CurrentDate{}, "current_date"},
+		{&ast.CurrentTimestamp{}, "current_timestamp"},
 	}
 	for _, tc := range cases {
 		if tc.node.Key() != tc.key {

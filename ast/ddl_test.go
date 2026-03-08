@@ -83,3 +83,21 @@ func TestSchema(t *testing.T) {
 		t.Errorf("Key: got %q, want schema", s.Key())
 	}
 }
+
+func TestAlter(t *testing.T) {
+	action := &ast.Drop{}
+	action.SetThis(ast.Tbl("users"))
+	action.SetArg("kind", "TABLE")
+	action.SetArg("exists", false)
+	action.SetArg("cascade", false)
+
+	alter := &ast.Alter{}
+	alter.SetArg("actions", []ast.Node{action})
+
+	if alter.Key() != "alter" {
+		t.Errorf("Key: got %q, want alter", alter.Key())
+	}
+	if len(alter.Actions()) != 1 {
+		t.Errorf("Actions: got %d, want 1", len(alter.Actions()))
+	}
+}
