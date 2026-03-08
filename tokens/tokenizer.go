@@ -137,9 +137,13 @@ func (t *Tokenizer) advance(i int) {
 	}
 }
 
-// text returns sql[start:current].
+// text returns sql[start:current], clamped to the string bounds.
 func (t *Tokenizer) text() string {
-	return t.sql[t.start:t.current]
+	end := t.current
+	if end > t.size {
+		end = t.size
+	}
+	return t.sql[t.start:end]
 }
 
 // add appends a new token. text="" uses t.text().
@@ -155,7 +159,11 @@ func (t *Tokenizer) add(tt TokenType, text string) {
 	}
 
 	if text == "" {
-		text = t.sql[t.start:t.current]
+		end := t.current
+		if end > t.size {
+			end = t.size
+		}
+		text = t.sql[t.start:end]
 	}
 	t.result = append(t.result, Token{
 		Type:     tt,
@@ -261,8 +269,13 @@ func (t *Tokenizer) scanIdentifier(end string) {
 	for !t.end && string(t.char) != end {
 		t.advance(1)
 	}
-	// strip delimiters
-	raw := t.sql[t.start+1 : t.current-1]
+	// strip delimiters; guard against unclosed identifier (end of input)
+	lo := t.start + 1
+	hi := t.current - 1
+	if hi < lo {
+		hi = lo
+	}
+	raw := t.sql[lo:hi]
 	t.add(Identifier, raw)
 }
 
