@@ -110,6 +110,13 @@ RUN sh -c "$(curl -fsSL https://github.com/deluan/zsh-in-docker/releases/downloa
   -p git \
   -x
 
+# Install Powerlevel10k theme
+RUN git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
+  ~/.oh-my-zsh/custom/themes/powerlevel10k
+
+# Set p10k as the ZSH theme
+RUN sed -i 's/^ZSH_THEME=.*/ZSH_THEME="powerlevel10k\/powerlevel10k"/' ~/.zshrc
+
 # Copy zsh configuration
 COPY --chown=vscode:vscode .zshrc /home/vscode/.zshrc.custom
 
