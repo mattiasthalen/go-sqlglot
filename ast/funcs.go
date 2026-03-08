@@ -1,6 +1,7 @@
 package ast
 
-// Func is the base struct for built-in SQL function nodes.
+// Func is the base struct embedded by typed function nodes (Count, Sum, etc.).
+// Do not use Func directly; embed it and implement Key().
 type Func struct{ Expression }
 
 // Anonymous represents an unrecognised function call.

@@ -74,3 +74,9 @@ func (a *Alter) Actions() []Node {
 type Truncate struct{ Expression }
 
 func (t *Truncate) Key() string { return "truncate" }
+
+// Tables returns the list of tables to be truncated.
+func (t *Truncate) Tables() []Node {
+	ns, _ := t.GetArgs()["this"].([]Node)
+	return ns
+}

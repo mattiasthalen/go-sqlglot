@@ -69,3 +69,22 @@ func TestDelete(t *testing.T) {
 		t.Errorf("Key: got %q, want delete", del.Key())
 	}
 }
+
+func TestMerge(t *testing.T) {
+	m := &ast.Merge{}
+	m.SetArg("this", ast.Tbl("target"))
+	m.SetArg("using", ast.Tbl("source"))
+	m.SetArg("on", ast.Eq(ast.Col("", "id"), ast.Col("", "id")))
+	if m.Key() != "merge" {
+		t.Errorf("Key: got %q, want merge", m.Key())
+	}
+	if m.Target() == nil {
+		t.Error("Target() should not be nil")
+	}
+	if m.Using() == nil {
+		t.Error("Using() should not be nil")
+	}
+	if m.On() == nil {
+		t.Error("On() should not be nil")
+	}
+}

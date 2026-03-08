@@ -101,3 +101,14 @@ func TestAlter(t *testing.T) {
 		t.Errorf("Actions: got %d, want 1", len(alter.Actions()))
 	}
 }
+
+func TestTruncate(t *testing.T) {
+	tr := &ast.Truncate{}
+	tr.SetArg("this", []ast.Node{ast.Tbl("orders"), ast.Tbl("events")})
+	if tr.Key() != "truncate" {
+		t.Errorf("Key: got %q, want truncate", tr.Key())
+	}
+	if len(tr.Tables()) != 2 {
+		t.Errorf("Tables: got %d, want 2", len(tr.Tables()))
+	}
+}
