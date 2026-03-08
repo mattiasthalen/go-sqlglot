@@ -188,12 +188,72 @@ func (t *Tokenizer) add(tt TokenType, text string) {
 	}
 }
 
-// scanNumber, scanIdentifier, scanKeywords: stubs expanded in later tasks.
+// scanNumber scans an integer, float, scientific, hex, or binary literal.
 func (t *Tokenizer) scanNumber() {
-	for t.peek >= '0' && t.peek <= '9' {
+	// 0b... binary  /  0x... hex
+	if t.char == '0' {
+		p := toUpper(t.peek)
+		if p == 'B' {
+			t.advance(1)
+			t.extractBareValue()
+			t.add(BitString, t.sql[t.start+2:t.current])
+			return
+		}
+		if p == 'X' {
+			t.advance(1)
+			t.extractBareValue()
+			t.add(HexString, t.sql[t.start+2:t.current])
+			return
+		}
+	}
+
+	decimal := false
+	scientific := 0
+
+	for {
+		pk := t.peek
+		switch {
+		case pk >= '0' && pk <= '9':
+			t.advance(1)
+		case pk == '.' && !decimal:
+			decimal = true
+			t.advance(1)
+		case (pk == '-' || pk == '+') && scientific == 1:
+			if t.current+1 < t.size && t.sql[t.current+1] >= '0' && t.sql[t.current+1] <= '9' {
+				scientific++
+				t.advance(1)
+			} else {
+				goto done
+			}
+		case toUpper(pk) == 'E' && scientific == 0:
+			scientific++
+			t.advance(1)
+		case pk == '_' && t.cfg.NumbersCanBeUnderscoreSeparated:
+			t.advance(1)
+		default:
+			goto done
+		}
+	}
+done:
+	numText := t.text()
+	if t.cfg.NumbersCanBeUnderscoreSeparated {
+		numText = strings.ReplaceAll(numText, "_", "")
+	}
+	t.add(Number, numText)
+}
+
+// extractBareValue advances past alphanumeric/underscore chars (for 0x / 0b values).
+func (t *Tokenizer) extractBareValue() {
+	for {
+		pk := t.peek
+		if pk == 0 || pk == ' ' || pk == '\t' || pk == '\n' || pk == '\r' {
+			break
+		}
+		if _, ok := t.cfg.SingleTokens[string(pk)]; ok {
+			break
+		}
 		t.advance(1)
 	}
-	t.add(Number, t.text())
 }
 
 func (t *Tokenizer) scanIdentifier(end string) {

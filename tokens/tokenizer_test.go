@@ -82,6 +82,34 @@ func TestTokenizeStrings(t *testing.T) {
 	}
 }
 
+func TestTokenizeNumbers(t *testing.T) {
+	cases := []struct {
+		sql  string
+		text string
+		typ  tokens.TokenType
+	}{
+		{"42", "42", tokens.Number},
+		{"0", "0", tokens.Number},
+		{"3.14", "3.14", tokens.Number},
+		{"1e10", "1e10", tokens.Number},
+		{"1E-3", "1E-3", tokens.Number},
+		{"2.5E+2", "2.5E+2", tokens.Number},
+	}
+	for _, tc := range cases {
+		got := tok(t, tc.sql)
+		if len(got) != 1 {
+			t.Errorf("sql=%q: got %d tokens: %v", tc.sql, len(got), got)
+			continue
+		}
+		if got[0].Type != tc.typ {
+			t.Errorf("sql=%q: type got %v, want %v", tc.sql, got[0].Type, tc.typ)
+		}
+		if got[0].Text != tc.text {
+			t.Errorf("sql=%q: text got %q, want %q", tc.sql, got[0].Text, tc.text)
+		}
+	}
+}
+
 func TestTokenizeKeywords(t *testing.T) {
 	cases := []struct {
 		sql  string
