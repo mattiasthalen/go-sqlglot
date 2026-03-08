@@ -57,3 +57,39 @@ func TestTokenizeSinglePunct(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenizeKeywords(t *testing.T) {
+	cases := []struct {
+		sql  string
+		want []tokens.TokenType
+	}{
+		{"SELECT", []tokens.TokenType{tokens.Select}},
+		{"FROM", []tokens.TokenType{tokens.From}},
+		{"WHERE", []tokens.TokenType{tokens.Where}},
+		{"GROUP BY", []tokens.TokenType{tokens.GroupBy}},
+		{"ORDER BY", []tokens.TokenType{tokens.OrderBy}},
+		{"SELECT *", []tokens.TokenType{tokens.Select, tokens.Star}},
+		{"!=", []tokens.TokenType{tokens.Neq}},
+		{"<>", []tokens.TokenType{tokens.Neq}},
+		{">=", []tokens.TokenType{tokens.Gte}},
+		{"<=", []tokens.TokenType{tokens.Lte}},
+		{"::", []tokens.TokenType{tokens.DColon}},
+		{"||", []tokens.TokenType{tokens.DPipe}},
+		{"->", []tokens.TokenType{tokens.Arrow}},
+		{"->>", []tokens.TokenType{tokens.DArrow}},
+		{"&&", []tokens.TokenType{tokens.DAmp}},
+	}
+	for _, tc := range cases {
+		got := tok(t, tc.sql)
+		if len(got) != len(tc.want) {
+			t.Errorf("sql=%q: got %d tokens %v, want %d %v",
+				tc.sql, len(got), got, len(tc.want), tc.want)
+			continue
+		}
+		for i, want := range tc.want {
+			if got[i].Type != want {
+				t.Errorf("sql=%q [%d]: got %v, want %v", tc.sql, i, got[i].Type, want)
+			}
+		}
+	}
+}
