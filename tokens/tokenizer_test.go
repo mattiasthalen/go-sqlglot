@@ -110,6 +110,62 @@ func TestTokenizeNumbers(t *testing.T) {
 	}
 }
 
+func TestTokenizeLineComment(t *testing.T) {
+	got := tok(t, "SELECT -- pick all\n*")
+	if len(got) != 2 {
+		t.Fatalf("got %d tokens: %v", len(got), got)
+	}
+	if got[0].Type != tokens.Select {
+		t.Errorf("[0]: got %v, want Select", got[0].Type)
+	}
+	if len(got[0].Comments) != 1 || got[0].Comments[0] != " pick all" {
+		t.Errorf("SELECT comments: %v", got[0].Comments)
+	}
+	if got[1].Type != tokens.Star {
+		t.Errorf("[1]: got %v, want Star", got[1].Type)
+	}
+}
+
+func TestTokenizeBlockComment(t *testing.T) {
+	got := tok(t, "/* leading */ SELECT")
+	if len(got) != 1 || got[0].Type != tokens.Select {
+		t.Fatalf("got %v", got)
+	}
+	// Leading comment attaches to the next token (SELECT)
+	if len(got[0].Comments) != 1 || got[0].Comments[0] != " leading " {
+		t.Errorf("SELECT comments: %v", got[0].Comments)
+	}
+}
+
+func TestTokenizeSelectStatement(t *testing.T) {
+	sql := "SELECT a, b FROM t WHERE x = 1"
+	got := tok(t, sql)
+	want := []struct {
+		typ  tokens.TokenType
+		text string
+	}{
+		{tokens.Select, "SELECT"},
+		{tokens.Var, "a"},
+		{tokens.Comma, ","},
+		{tokens.Var, "b"},
+		{tokens.From, "FROM"},
+		{tokens.Var, "t"},
+		{tokens.Where, "WHERE"},
+		{tokens.Var, "x"},
+		{tokens.Eq, "="},
+		{tokens.Number, "1"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d tokens, want %d:\n%v", len(got), len(want), got)
+	}
+	for i, w := range want {
+		if got[i].Type != w.typ || got[i].Text != w.text {
+			t.Errorf("[%d]: got (%v,%q), want (%v,%q)",
+				i, got[i].Type, got[i].Text, w.typ, w.text)
+		}
+	}
+}
+
 func TestTokenizeKeywords(t *testing.T) {
 	cases := []struct {
 		sql  string
