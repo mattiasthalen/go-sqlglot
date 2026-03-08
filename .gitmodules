@@ -1,0 +1,3 @@
+[submodule "external/sqlglot"]
+	path = external/sqlglot
+	url = https://github.com/tobymao/sqlglot.git
