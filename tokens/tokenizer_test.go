@@ -201,3 +201,16 @@ func TestTokenizeKeywords(t *testing.T) {
 		}
 	}
 }
+
+func TestTokenizeLineTracking(t *testing.T) {
+	got := tok(t, "SELECT\n  a")
+	if len(got) != 2 {
+		t.Fatalf("got %d tokens: %v", len(got), got)
+	}
+	if got[0].Line != 1 {
+		t.Errorf("SELECT line: got %d, want 1", got[0].Line)
+	}
+	if got[1].Line != 2 {
+		t.Errorf("'a' line: got %d, want 2", got[1].Line)
+	}
+}
