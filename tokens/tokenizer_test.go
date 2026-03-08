@@ -58,6 +58,30 @@ func TestTokenizeSinglePunct(t *testing.T) {
 	}
 }
 
+func TestTokenizeStrings(t *testing.T) {
+	cases := []struct {
+		sql      string
+		wantType tokens.TokenType
+		wantText string
+	}{
+		{"'hello'", tokens.String, "hello"},
+		{"'it''s'", tokens.String, "it's"}, // doubled-quote escape (Issue 1 fix)
+	}
+	for _, tc := range cases {
+		got := tok(t, tc.sql)
+		if len(got) != 1 {
+			t.Errorf("sql=%q: got %d tokens, want 1: %v", tc.sql, len(got), got)
+			continue
+		}
+		if got[0].Type != tc.wantType {
+			t.Errorf("sql=%q: type got %v, want %v", tc.sql, got[0].Type, tc.wantType)
+		}
+		if got[0].Text != tc.wantText {
+			t.Errorf("sql=%q: text got %q, want %q", tc.sql, got[0].Text, tc.wantText)
+		}
+	}
+}
+
 func TestTokenizeKeywords(t *testing.T) {
 	cases := []struct {
 		sql  string

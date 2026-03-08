@@ -88,7 +88,7 @@ func DefaultConfig() Config {
 		},
 		Quotes:            map[string]string{"'": "'"},
 		Identifiers:       map[string]string{`"`: `"`},
-		Comments:          map[string]string{"--": "", "/*": "*/"},
+		Comments:          map[string]string{"--": "", "/*": "*/", "/*+": "*/"},
 		StringEscapes:     map[string]struct{}{"'": {}},
 		IdentifierEscapes: map[string]struct{}{},
 		NestedComments:    true,

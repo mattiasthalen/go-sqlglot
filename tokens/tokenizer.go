@@ -381,12 +381,6 @@ func (t *Tokenizer) extractString(delimiter string, escapes map[string]struct{})
 	var sb strings.Builder
 	delimSize := len(delimiter)
 	for {
-		if t.chars(delimSize) == delimiter {
-			if delimSize > 1 {
-				t.advance(delimSize - 1)
-			}
-			break
-		}
 		if t.end {
 			break // unclosed — parser will catch
 		}
@@ -401,10 +395,14 @@ func (t *Tokenizer) extractString(delimiter string, escapes map[string]struct{})
 				sb.WriteString(ch)
 				sb.WriteString(peekStr)
 			}
-			if t.current+1 < t.size {
-				t.advance(2)
-			}
+			t.advance(2)
 			continue
+		}
+		if t.chars(delimSize) == delimiter {
+			if delimSize > 1 {
+				t.advance(delimSize - 1)
+			}
+			break
 		}
 		sb.WriteByte(t.char)
 		t.advance(1)
