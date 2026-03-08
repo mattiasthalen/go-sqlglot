@@ -111,7 +111,8 @@ RUN sh -c "$(curl -fsSL https://github.com/deluan/zsh-in-docker/releases/downloa
   -x
 
 # Install Powerlevel10k theme
-RUN git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
+RUN [ -d ~/.oh-my-zsh/custom/themes/powerlevel10k ] || \
+  git clone --depth=1 https://github.com/romkatv/powerlevel10k.git \
   ~/.oh-my-zsh/custom/themes/powerlevel10k
 
 # Set p10k as the ZSH theme
