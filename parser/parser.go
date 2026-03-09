@@ -333,6 +333,10 @@ func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
 			}
 			if tt == tokens.In {
 				p.Advance() // consume IN
+				// TODO: IN (SELECT ...) subqueries are not yet supported.
+				// Currently only IN (literal, literal, ...) value lists are handled.
+				// Subquery support requires calling parseQueryBody() when the first
+				// token after '(' is tokens.Select or tokens.With.
 				if _, err := p.expect(tokens.LParen); err != nil {
 					return nil, err
 				}
@@ -1015,8 +1019,8 @@ func (p *Parser) parseFrom() (*ast.From, error) {
 	from := &ast.From{}
 	from.SetThis(tbl)
 
-	// JOINs — collect into a slice and store as "joins"
-	var joins []ast.Node
+	// JOINs — appended via AppendExpr so they live in "expressions" alongside
+	// any future multi-table FROM entries, consistent with other multi-child nodes.
 	for {
 		join, ok, err := p.tryParseJoin()
 		if err != nil {
@@ -1025,10 +1029,7 @@ func (p *Parser) parseFrom() (*ast.From, error) {
 		if !ok {
 			break
 		}
-		joins = append(joins, join)
-	}
-	if len(joins) > 0 {
-		from.SetArg("joins", joins)
+		from.AppendExpr(join)
 	}
 	return from, nil
 }
