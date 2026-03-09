@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/dwarvesf/go-sqlglot/ast"
 	"github.com/dwarvesf/go-sqlglot/tokens"
@@ -99,4 +100,142 @@ func (e *ParseError) Error() string {
 func (p *Parser) errorf(msg string, args ...any) error {
 	t := p.Peek()
 	return &ParseError{Line: t.Line, Col: t.Col, Msg: fmt.Sprintf(msg, args...)}
+}
+
+// ParseExpr parses an expression at the given minimum precedence.
+// minPrec=0 parses a full expression.
+// Binary-op support is added in Task 4; for now this is atoms and unary only.
+func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
+	return p.parseUnary(minPrec)
+}
+
+func (p *Parser) parseUnary(minPrec int) (ast.Node, error) {
+	return p.parseAtom()
+}
+
+// parseAtom parses the smallest indivisible expression unit.
+func (p *Parser) parseAtom() (ast.Node, error) {
+	t := p.Peek()
+	switch t.Type {
+	case tokens.Number:
+		p.Advance()
+		return ast.NumberLit(t.Text), nil
+	case tokens.String:
+		p.Advance()
+		return ast.StringLit(t.Text), nil
+	case tokens.Null:
+		p.Advance()
+		return &ast.Null{}, nil
+	case tokens.True:
+		p.Advance()
+		n := &ast.Boolean{}
+		n.SetArg("this", true)
+		return n, nil
+	case tokens.False:
+		p.Advance()
+		n := &ast.Boolean{}
+		n.SetArg("this", false)
+		return n, nil
+	case tokens.Star:
+		p.Advance()
+		return &ast.Star{}, nil
+	case tokens.Placeholder:
+		p.Advance()
+		ph := &ast.Placeholder{}
+		ph.SetArg("this", t.Text)
+		return ph, nil
+	case tokens.Identifier, tokens.Var, tokens.Column:
+		return p.parseColumnOrFunc()
+	}
+	return nil, p.errorf("unexpected token %v (%q)", t.Type, t.Text)
+}
+
+// parseColumnOrFunc parses a bare name, table.column, or func(...) call.
+func (p *Parser) parseColumnOrFunc() (ast.Node, error) {
+	nameTok := p.Advance()
+	name := nameTok.Text
+	upper := strings.ToUpper(name)
+	_ = upper // used in later tasks for CAST/TRY_CAST
+
+	// table.column
+	if p.check(tokens.Dot) {
+		p.Advance()
+		col2 := p.Advance().Text
+		c := &ast.Column{}
+		c.SetArg("table", ast.Ident(name))
+		c.SetArg("this", ast.Ident(col2))
+		return c, nil
+	}
+
+	// Function call
+	if p.check(tokens.LParen) {
+		return p.parseFuncCall(name)
+	}
+
+	// Plain column reference
+	c := &ast.Column{}
+	c.SetArg("this", ast.Ident(name))
+	return c, nil
+}
+
+// parseFuncCall parses name(...) — the name has already been consumed.
+func (p *Parser) parseFuncCall(name string) (ast.Node, error) {
+	// Offer dialect hook first.
+	if p.dialect != nil {
+		if node, handled, err := p.dialect.ParseSpecialFunction(p, name); handled {
+			return node, err
+		}
+	}
+
+	p.Advance() // consume '('
+
+	lname := strings.ToLower(name)
+
+	// COUNT(DISTINCT ...) special form
+	distinct := false
+	if lname == "count" {
+		if _, ok := p.match(tokens.Distinct); ok {
+			distinct = true
+		}
+	}
+
+	var args []ast.Node
+	if !p.check(tokens.RParen) {
+		for {
+			arg, err := p.ParseExpr(0)
+			if err != nil {
+				return nil, err
+			}
+			args = append(args, arg)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+	}
+	if _, err := p.expect(tokens.RParen); err != nil {
+		return nil, err
+	}
+
+	// Construct typed node via registry, or fall back to Anonymous.
+	var node ast.Node
+	if factory, ok := ast.FuncRegistry[lname]; ok {
+		node = factory()
+	} else {
+		anon := &ast.Anonymous{}
+		anon.SetArg("this", name)
+		node = anon
+	}
+
+	type appender interface {
+		AppendExpr(ast.Node)
+	}
+	if ap, ok := node.(appender); ok {
+		for _, a := range args {
+			ap.AppendExpr(a)
+		}
+	}
+	if distinct {
+		node.SetArg("distinct", true)
+	}
+	return node, nil
 }
