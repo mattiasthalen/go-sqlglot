@@ -254,6 +254,81 @@ func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
 	}
 
 	for {
+		// Special compound operators not in binopPrec.
+		switch p.PeekType() {
+		case tokens.Is:
+			p.Advance() // consume IS
+			// IS NOT NULL  →  Not(Is(x, Null))
+			negated := false
+			if p.check(tokens.Not) {
+				p.Advance()
+				negated = true
+			}
+			right, err := p.parseUnary()
+			if err != nil {
+				return nil, err
+			}
+			n := &ast.Is{}
+			n.SetThis(left)
+			n.SetArg("expression", right)
+			if negated {
+				wrap := &ast.Not{}
+				wrap.SetThis(n)
+				left = wrap
+			} else {
+				left = n
+			}
+			continue
+
+		case tokens.Between:
+			p.Advance() // consume BETWEEN
+			low, err := p.ParseExpr(5) // stop before AND (prec 2)
+			if err != nil {
+				return nil, err
+			}
+			if _, err := p.expect(tokens.And); err != nil {
+				return nil, err
+			}
+			high, err := p.ParseExpr(5)
+			if err != nil {
+				return nil, err
+			}
+			b := &ast.Between{}
+			b.SetThis(left)
+			b.SetArg("low", low)
+			b.SetArg("high", high)
+			left = b
+			continue
+
+		case tokens.In:
+			p.Advance() // consume IN
+			if _, err := p.expect(tokens.LParen); err != nil {
+				return nil, err
+			}
+			var items []ast.Node
+			if !p.check(tokens.RParen) {
+				for {
+					item, err := p.ParseExpr(0)
+					if err != nil {
+						return nil, err
+					}
+					items = append(items, item)
+					if _, ok := p.match(tokens.Comma); !ok {
+						break
+					}
+				}
+			}
+			if _, err := p.expect(tokens.RParen); err != nil {
+				return nil, err
+			}
+			in := &ast.In{}
+			in.SetThis(left)
+			in.SetArg("expressions", items)
+			left = in
+			continue
+		}
+
+		// Standard binary operators via Pratt.
 		prec := p.binopPrec()
 		if prec <= minPrec {
 			break

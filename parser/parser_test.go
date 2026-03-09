@@ -289,6 +289,116 @@ func TestLeftAssocSubtraction(t *testing.T) {
 	}
 }
 
+func TestParseBinaryEq(t *testing.T) {
+	toks, _ := tokens.Tokenize("a = b", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.EQ); !ok {
+		t.Fatalf("expected *ast.EQ, got %T", node)
+	}
+}
+
+func TestParseBinaryAndOr(t *testing.T) {
+	// a = 1 AND b = 2 OR c = 3  → (a=1 AND b=2) OR c=3
+	toks, _ := tokens.Tokenize("a = 1 AND b = 2 OR c = 3", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	or, ok := node.(*ast.Or)
+	if !ok {
+		t.Fatalf("expected *ast.Or at root, got %T", node)
+	}
+	if _, ok := or.Left().(*ast.And); !ok {
+		t.Fatalf("expected *ast.And as left child of Or, got %T", or.Left())
+	}
+}
+
+func TestParseBetween(t *testing.T) {
+	toks, _ := tokens.Tokenize("x BETWEEN 1 AND 10", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Between); !ok {
+		t.Fatalf("expected *ast.Between, got %T", node)
+	}
+}
+
+func TestParseIsNull(t *testing.T) {
+	toks, _ := tokens.Tokenize("x IS NULL", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Is); !ok {
+		t.Fatalf("expected *ast.Is, got %T", node)
+	}
+}
+
+func TestParseIsNotNull(t *testing.T) {
+	toks, _ := tokens.Tokenize("x IS NOT NULL", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, ok := node.(*ast.Not)
+	if !ok {
+		t.Fatalf("expected *ast.Not wrapping Is, got %T", node)
+	}
+	if _, ok := n.Operand().(*ast.Is); !ok {
+		t.Fatalf("expected *ast.Is under Not, got %T", n.Operand())
+	}
+}
+
+func TestParseInList(t *testing.T) {
+	toks, _ := tokens.Tokenize("x IN (1, 2, 3)", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.In); !ok {
+		t.Fatalf("expected *ast.In, got %T", node)
+	}
+}
+
+func TestParseLikeExpr(t *testing.T) {
+	toks, _ := tokens.Tokenize("name LIKE '%foo%'", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Like); !ok {
+		t.Fatalf("expected *ast.Like, got %T", node)
+	}
+}
+
+func TestParseArithmetic(t *testing.T) {
+	// 1 + 2 * 3  → 1 + (2*3)
+	toks, _ := tokens.Tokenize("1 + 2 * 3", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	add, ok := node.(*ast.Add)
+	if !ok {
+		t.Fatalf("expected *ast.Add at root, got %T", node)
+	}
+	if _, ok := add.Right().(*ast.Mul); !ok {
+		t.Fatalf("expected *ast.Mul as right child of Add, got %T", add.Right())
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),
