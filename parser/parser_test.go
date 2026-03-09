@@ -164,6 +164,75 @@ func TestParseTableDotColumn(t *testing.T) {
 	}
 }
 
+func TestParseCast(t *testing.T) {
+	toks, _ := tokens.Tokenize("CAST(x AS INT)", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := node.(*ast.Cast)
+	if !ok {
+		t.Fatalf("expected *ast.Cast, got %T", node)
+	}
+	if c.To() == nil || c.To().TypeName() == "" {
+		t.Fatalf("Cast.To() is empty")
+	}
+}
+
+func TestParseCase(t *testing.T) {
+	toks, _ := tokens.Tokenize("CASE WHEN 1=1 THEN 'yes' ELSE 'no' END", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, ok := node.(*ast.Case)
+	if !ok {
+		t.Fatalf("expected *ast.Case, got %T", node)
+	}
+	if c.Default() == nil {
+		t.Fatal("Case.Default() is nil, expected 'no'")
+	}
+}
+
+func TestParseParenExpr(t *testing.T) {
+	toks, _ := tokens.Tokenize("(42)", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lit, ok := node.(*ast.Literal)
+	if !ok || lit.Value() != "42" {
+		t.Fatalf("expected Literal(42), got %T", node)
+	}
+}
+
+func TestParseNotExpr(t *testing.T) {
+	toks, _ := tokens.Tokenize("NOT 1", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Not); !ok {
+		t.Fatalf("expected *ast.Not, got %T", node)
+	}
+}
+
+func TestParseNegExpr(t *testing.T) {
+	toks, _ := tokens.Tokenize("-1", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Neg); !ok {
+		t.Fatalf("expected *ast.Neg, got %T", node)
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),

@@ -102,14 +102,196 @@ func (p *Parser) errorf(msg string, args ...any) error {
 	return &ParseError{Line: t.Line, Col: t.Col, Msg: fmt.Sprintf(msg, args...)}
 }
 
-// ParseExpr parses an expression at the given minimum precedence.
+// binopPrec returns the Pratt precedence of the current token as a binary
+// operator, or 0 if the current token is not a binary operator.
+func (p *Parser) binopPrec() int {
+	switch p.PeekType() {
+	case tokens.Or:
+		return 1
+	case tokens.And:
+		return 2
+	case tokens.Eq, tokens.Neq, tokens.NullsafeEq,
+		tokens.Is, tokens.In, tokens.Like, tokens.Ilike,
+		tokens.SimilarTo, tokens.RLike, tokens.Between:
+		return 4
+	case tokens.Lt, tokens.Lte, tokens.Gt, tokens.Gte:
+		return 5
+	case tokens.DPipe:
+		return 6
+	case tokens.Plus, tokens.Dash:
+		return 7
+	case tokens.Star, tokens.Slash, tokens.Mod, tokens.Div:
+		return 8
+	case tokens.Caret:
+		return 9
+	}
+	return 0
+}
+
+// makeBinaryNode returns the AST node for the given binary operator token
+// with left and right already set.
+func makeBinaryNode(op tokens.Token, left, right ast.Node) ast.Node {
+	var node ast.Node
+	switch op.Type {
+	case tokens.Eq:
+		e := &ast.EQ{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Neq:
+		e := &ast.NEQ{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Lt:
+		e := &ast.LT{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Lte:
+		e := &ast.LTE{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Gt:
+		e := &ast.GT{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Gte:
+		e := &ast.GTE{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.NullsafeEq:
+		e := &ast.NullSafeEQ{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.And:
+		e := &ast.And{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Or:
+		e := &ast.Or{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Plus:
+		e := &ast.Add{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Dash:
+		e := &ast.Sub{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Star:
+		e := &ast.Mul{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Slash:
+		e := &ast.Div{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Mod:
+		e := &ast.Mod{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Caret:
+		e := &ast.Pow{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.DPipe:
+		e := &ast.DPipe{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Like:
+		e := &ast.Like{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.Ilike:
+		e := &ast.ILike{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	default:
+		// Fallback: use anonymous wrapping (should not happen if binopPrec is correct)
+		e := &ast.EQ{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	}
+	return node
+}
+
+// ParseExpr parses an expression at the given minimum precedence using
+// Pratt (precedence-climbing) parsing.
 // minPrec=0 parses a full expression.
-// Binary-op support is added in Task 4; for now this is atoms and unary only.
 func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
-	return p.parseUnary(minPrec)
+	left, err := p.parseUnary(minPrec)
+	if err != nil {
+		return nil, err
+	}
+
+	for {
+		prec := p.binopPrec()
+		if prec <= minPrec {
+			break
+		}
+		op := p.Advance()
+		right, err := p.ParseExpr(prec) // left-associative: right side uses same prec
+		if err != nil {
+			return nil, err
+		}
+		left = makeBinaryNode(op, left, right)
+	}
+
+	return left, nil
 }
 
 func (p *Parser) parseUnary(minPrec int) (ast.Node, error) {
+	// Unary NOT
+	if p.check(tokens.Not) {
+		p.Advance()
+		operand, err := p.parseUnary(3)
+		if err != nil {
+			return nil, err
+		}
+		n := &ast.Not{}
+		n.SetThis(operand)
+		return n, nil
+	}
+	// Unary minus
+	if p.check(tokens.Dash) {
+		p.Advance()
+		operand, err := p.parseUnary(10)
+		if err != nil {
+			return nil, err
+		}
+		n := &ast.Neg{}
+		n.SetThis(operand)
+		return n, nil
+	}
+	// Unary bitwise NOT
+	if p.check(tokens.Tilde) {
+		p.Advance()
+		operand, err := p.parseUnary(10)
+		if err != nil {
+			return nil, err
+		}
+		n := &ast.BitwiseNot{}
+		n.SetThis(operand)
+		return n, nil
+	}
 	return p.parseAtom()
 }
 
@@ -146,6 +328,18 @@ func (p *Parser) parseAtom() (ast.Node, error) {
 		return ph, nil
 	case tokens.Identifier, tokens.Var, tokens.Column:
 		return p.parseColumnOrFunc()
+	case tokens.LParen:
+		p.Advance() // consume '('
+		inner, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		return inner, nil
+	case tokens.Case:
+		return p.parseCase()
 	}
 	return nil, p.errorf("unexpected token %v (%q)", t.Type, t.Text)
 }
@@ -155,11 +349,10 @@ func (p *Parser) parseColumnOrFunc() (ast.Node, error) {
 	nameTok := p.Advance()
 	name := nameTok.Text
 	upper := strings.ToUpper(name)
-	_ = upper // used in later tasks for CAST/TRY_CAST
 
-	// table.column
+	// table.column  or  schema.table.column
 	if p.check(tokens.Dot) {
-		p.Advance()
+		p.Advance() // consume dot
 		col2 := p.Advance().Text
 		c := &ast.Column{}
 		c.SetArg("table", ast.Ident(name))
@@ -167,8 +360,16 @@ func (p *Parser) parseColumnOrFunc() (ast.Node, error) {
 		return c, nil
 	}
 
-	// Function call
+	// CAST / TRY_CAST
 	if p.check(tokens.LParen) {
+		if upper == "CAST" {
+			p.Advance() // consume '('
+			return p.parseCast(false)
+		}
+		if upper == "TRY_CAST" {
+			p.Advance()
+			return p.parseCast(true)
+		}
 		return p.parseFuncCall(name)
 	}
 
@@ -238,4 +439,142 @@ func (p *Parser) parseFuncCall(name string) (ast.Node, error) {
 		node.SetArg("distinct", true)
 	}
 	return node, nil
+}
+
+// parseCase parses CASE [expr] WHEN cond THEN result ... [ELSE result] END.
+func (p *Parser) parseCase() (ast.Node, error) {
+	p.Advance() // consume CASE
+
+	c := &ast.Case{}
+
+	// Optional subject: CASE expr WHEN ...
+	if !p.check(tokens.When) {
+		subject, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		c.SetThis(subject)
+	}
+
+	var whens []ast.Node
+	for p.check(tokens.When) {
+		p.Advance() // consume WHEN
+		cond, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(tokens.Then); err != nil {
+			return nil, err
+		}
+		result, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		w := &ast.When{}
+		w.SetThis(cond)
+		w.SetArg("then", result)
+		whens = append(whens, w)
+	}
+	c.SetArg("ifs", whens)
+
+	if _, ok := p.match(tokens.Else); ok {
+		def, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		c.SetArg("default", def)
+	}
+
+	if _, err := p.expect(tokens.End); err != nil {
+		return nil, err
+	}
+	return c, nil
+}
+
+// parseCast parses CAST(expr AS datatype) after consuming "CAST" and "(".
+func (p *Parser) parseCast(safe bool) (ast.Node, error) {
+	// '(' already consumed
+	expr, err := p.ParseExpr(0)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(tokens.Alias); err != nil { // AS keyword is tokens.Alias
+		return nil, err
+	}
+	dt, err := p.parseDataType()
+	if err != nil {
+		return nil, err
+	}
+	if _, err := p.expect(tokens.RParen); err != nil {
+		return nil, err
+	}
+	var node ast.Node
+	if safe {
+		n := &ast.TryCast{}
+		n.SetThis(expr)
+		n.SetArg("to", dt)
+		node = n
+	} else {
+		n := &ast.Cast{}
+		n.SetThis(expr)
+		n.SetArg("to", dt)
+		node = n
+	}
+	return node, nil
+}
+
+// parseDataType parses a SQL type name and optional precision/scale args.
+// e.g. INT, VARCHAR(255), DECIMAL(10,2), TIMESTAMP WITH TIME ZONE.
+func (p *Parser) parseDataType() (*ast.DataType, error) {
+	// Dialect hook first.
+	if p.dialect != nil {
+		if node, handled, err := p.dialect.ParseDataType(p); handled {
+			dt, ok := node.(*ast.DataType)
+			if !ok {
+				return nil, p.errorf("dialect ParseDataType returned non-DataType node")
+			}
+			return dt, err
+		}
+	}
+
+	t := p.Peek()
+	// Accept any keyword that maps to a data type, or a bare identifier.
+	var typeName string
+	switch t.Type {
+	case tokens.Int, tokens.BigInt, tokens.SmallInt, tokens.TinyInt,
+		tokens.Float, tokens.Double, tokens.Decimal,
+		tokens.Char, tokens.NChar, tokens.VarChar, tokens.NVarChar, tokens.Text,
+		tokens.Boolean, tokens.Date, tokens.Timestamp, tokens.TimestampTZ,
+		tokens.Time, tokens.JSON, tokens.JSONB, tokens.UUID, tokens.Binary,
+		tokens.VarBinary, tokens.Blob, tokens.Bit, tokens.XML,
+		tokens.Identifier, tokens.Var:
+		typeName = p.Advance().Text
+	default:
+		return nil, p.errorf("expected data type, got %v (%q)", t.Type, t.Text)
+	}
+
+	dt := &ast.DataType{}
+	dt.SetArg("this", strings.ToUpper(typeName))
+
+	// Optional precision/scale: INT(11), VARCHAR(255), DECIMAL(10,2)
+	if p.check(tokens.LParen) {
+		p.Advance()
+		var params []ast.Node
+		for {
+			param, err := p.ParseExpr(0)
+			if err != nil {
+				return nil, err
+			}
+			params = append(params, param)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		dt.SetArg("expressions", params)
+	}
+
+	return dt, nil
 }
