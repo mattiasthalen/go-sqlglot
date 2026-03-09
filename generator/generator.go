@@ -88,6 +88,65 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		}
 		b.WriteByte(')')
 		return nil
+	// Aggregate and scalar functions
+	case *ast.Count:
+		b.WriteString("COUNT(")
+		if n.Distinct() {
+			b.WriteString("DISTINCT ")
+		}
+		inner, _ := n.GetArgs()["this"].(ast.Node)
+		if err := g.generate(b, inner); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
+	case *ast.Sum:       return g.generateSimpleFunc(b, "SUM", n.Exprs())
+	case *ast.Avg:       return g.generateSimpleFunc(b, "AVG", n.Exprs())
+	case *ast.Max:       return g.generateSimpleFunc(b, "MAX", n.Exprs())
+	case *ast.Min:       return g.generateSimpleFunc(b, "MIN", n.Exprs())
+	case *ast.CountIf:   return g.generateSimpleFunc(b, "COUNTIF", n.Exprs())
+	case *ast.Lower:     return g.generateSimpleFunc(b, "LOWER", n.Exprs())
+	case *ast.Upper:     return g.generateSimpleFunc(b, "UPPER", n.Exprs())
+	case *ast.Trim:      return g.generateSimpleFunc(b, "TRIM", n.Exprs())
+	case *ast.Length:    return g.generateSimpleFunc(b, "LENGTH", n.Exprs())
+	case *ast.Abs:       return g.generateSimpleFunc(b, "ABS", n.Exprs())
+	case *ast.Round:     return g.generateSimpleFunc(b, "ROUND", n.Exprs())
+	case *ast.Ceil:      return g.generateSimpleFunc(b, "CEIL", n.Exprs())
+	case *ast.Floor:     return g.generateSimpleFunc(b, "FLOOR", n.Exprs())
+	case *ast.Concat:    return g.generateSimpleFunc(b, "CONCAT", n.Exprs())
+	case *ast.NVL:       return g.generateSimpleFunc(b, "NVL", n.Exprs())
+	case *ast.Now:
+		b.WriteString("NOW()")
+		return nil
+	case *ast.CurrentDate:
+		b.WriteString("CURRENT_DATE")
+		return nil
+	case *ast.CurrentTimestamp:
+		b.WriteString("CURRENT_TIMESTAMP")
+		return nil
+	case *ast.Substring:
+		b.WriteString("SUBSTRING(")
+		inner, _ := n.GetArgs()["this"].(ast.Node)
+		if err := g.generate(b, inner); err != nil {
+			return err
+		}
+		if start, ok := n.GetArgs()["start"].(ast.Node); ok && start != nil {
+			b.WriteString(", ")
+			if err := g.generate(b, start); err != nil {
+				return err
+			}
+		}
+		if length, ok := n.GetArgs()["length"].(ast.Node); ok && length != nil {
+			b.WriteString(", ")
+			if err := g.generate(b, length); err != nil {
+				return err
+			}
+		}
+		b.WriteByte(')')
+		return nil
+	case *ast.Anonymous:
+		name, _ := n.GetArgs()["this"].(string)
+		return g.generateSimpleFunc(b, name, n.Exprs())
 	// Case/When/If/Coalesce/Nullif/Cast/DataType
 	case *ast.When:
 		b.WriteString("WHEN ")
@@ -233,6 +292,16 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
 	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
 	}
+}
+
+func (g *Generator) generateSimpleFunc(b *strings.Builder, name string, args []ast.Node) error {
+	b.WriteString(name)
+	b.WriteByte('(')
+	if err := g.generateExprList(b, args); err != nil {
+		return err
+	}
+	b.WriteByte(')')
+	return nil
 }
 
 func (g *Generator) generateExprList(b *strings.Builder, nodes []ast.Node) error {
