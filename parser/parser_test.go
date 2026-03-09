@@ -399,6 +399,53 @@ func TestParseArithmetic(t *testing.T) {
 	}
 }
 
+func TestParseCaretRightAssoc(t *testing.T) {
+	// 2 ^ 3 ^ 2 should be right-associative: 2 ^ (3 ^ 2)
+	toks, _ := tokens.Tokenize("2 ^ 3 ^ 2", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pow, ok := node.(*ast.Pow)
+	if !ok {
+		t.Fatalf("expected *ast.Pow as root, got %T", node)
+	}
+	if _, ok := pow.Right().(*ast.Pow); !ok {
+		t.Fatalf("expected right-associative 2^(3^2), right child is %T", pow.Right())
+	}
+}
+
+func TestParseXor(t *testing.T) {
+	toks, _ := tokens.Tokenize("a XOR b", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Xor); !ok {
+		t.Fatalf("expected *ast.Xor, got %T", node)
+	}
+}
+
+func TestCompoundOpRespectsMinPrec(t *testing.T) {
+	// "a AND b IS NULL" should parse as "a AND (b IS NULL)", not "(a AND b) IS NULL".
+	// IS has compoundPrec=4 which beats AND's prec=2, so IS binds to b.
+	toks, _ := tokens.Tokenize("a AND b IS NULL", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	and, ok := node.(*ast.And)
+	if !ok {
+		t.Fatalf("expected *ast.And at root, got %T", node)
+	}
+	if _, ok := and.Right().(*ast.Is); !ok {
+		t.Fatalf("expected *ast.Is as right child of And, got %T", and.Right())
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),

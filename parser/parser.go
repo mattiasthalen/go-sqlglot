@@ -122,12 +122,20 @@ func (p *Parser) binopPrec() int {
 		return 7
 	case tokens.Star, tokens.Slash, tokens.Mod, tokens.Div:
 		return 8
-	case tokens.Caret, tokens.DStar:
+	case tokens.Caret:
 		return 9
 	case tokens.Xor:
 		return 3
+	// ESCAPE is used as a modifier after LIKE/ILIKE (e.g. LIKE '%\%' ESCAPE '\').
+	// It is placed at precedence 5 so it binds tighter than IS/IN/BETWEEN (4)
+	// but looser than relational operators (5 is exclusive — the Pratt strict
+	// guard means prec<=minPrec stops, so ESCAPE at 5 is consumable after LIKE
+	// whose right operand is parsed at nextPrec=4).
+	// Known gap: ESCAPE as a standalone binary operator is not idiomatic SQL;
+	// proper handling would wire it as a suffix of LIKE inside parseLike.
+	// For now it is registered here so inputs containing ESCAPE do not panic.
 	case tokens.Escape:
-		return 4
+		return 5
 	}
 	return 0
 }
@@ -207,7 +215,7 @@ func makeBinaryNode(op tokens.Token, left, right ast.Node) ast.Node {
 		e.SetThis(left)
 		e.SetArg("expression", right)
 		node = e
-	case tokens.Caret, tokens.DStar:
+	case tokens.Caret:
 		e := &ast.Pow{}
 		e.SetThis(left)
 		e.SetArg("expression", right)
@@ -363,7 +371,7 @@ func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
 		// Right-associative (^): recurse at prec-1 so the next same-level operator
 		// IS consumed by the right-side call.
 		nextPrec := prec
-		if op.Type == tokens.Caret || op.Type == tokens.DStar {
+		if op.Type == tokens.Caret {
 			nextPrec = prec - 1
 		}
 		right, err := p.ParseExpr(nextPrec)
