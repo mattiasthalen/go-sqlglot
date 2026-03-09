@@ -9,11 +9,11 @@ import (
 
 // Generator walks an AST and produces a SQL string.
 type Generator struct {
-	dialect GeneratorHooks
+	dialect Hooks
 }
 
 // New creates a Generator. Pass nil for dialect to use base behaviour only.
-func New(dialect GeneratorHooks) *Generator {
+func New(dialect Hooks) *Generator {
 	return &Generator{dialect: dialect}
 }
 
@@ -100,21 +100,36 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		}
 		b.WriteByte(')')
 		return nil
-	case *ast.Sum:       return g.generateSimpleFunc(b, "SUM", n.Exprs())
-	case *ast.Avg:       return g.generateSimpleFunc(b, "AVG", n.Exprs())
-	case *ast.Max:       return g.generateSimpleFunc(b, "MAX", n.Exprs())
-	case *ast.Min:       return g.generateSimpleFunc(b, "MIN", n.Exprs())
-	case *ast.CountIf:   return g.generateSimpleFunc(b, "COUNTIF", n.Exprs())
-	case *ast.Lower:     return g.generateSimpleFunc(b, "LOWER", n.Exprs())
-	case *ast.Upper:     return g.generateSimpleFunc(b, "UPPER", n.Exprs())
-	case *ast.Trim:      return g.generateSimpleFunc(b, "TRIM", n.Exprs())
-	case *ast.Length:    return g.generateSimpleFunc(b, "LENGTH", n.Exprs())
-	case *ast.Abs:       return g.generateSimpleFunc(b, "ABS", n.Exprs())
-	case *ast.Round:     return g.generateSimpleFunc(b, "ROUND", n.Exprs())
-	case *ast.Ceil:      return g.generateSimpleFunc(b, "CEIL", n.Exprs())
-	case *ast.Floor:     return g.generateSimpleFunc(b, "FLOOR", n.Exprs())
-	case *ast.Concat:    return g.generateSimpleFunc(b, "CONCAT", n.Exprs())
-	case *ast.NVL:       return g.generateSimpleFunc(b, "NVL", n.Exprs())
+	case *ast.Sum:
+		return g.generateSimpleFunc(b, "SUM", n.Exprs())
+	case *ast.Avg:
+		return g.generateSimpleFunc(b, "AVG", n.Exprs())
+	case *ast.Max:
+		return g.generateSimpleFunc(b, "MAX", n.Exprs())
+	case *ast.Min:
+		return g.generateSimpleFunc(b, "MIN", n.Exprs())
+	case *ast.CountIf:
+		return g.generateSimpleFunc(b, "COUNTIF", n.Exprs())
+	case *ast.Lower:
+		return g.generateSimpleFunc(b, "LOWER", n.Exprs())
+	case *ast.Upper:
+		return g.generateSimpleFunc(b, "UPPER", n.Exprs())
+	case *ast.Trim:
+		return g.generateSimpleFunc(b, "TRIM", n.Exprs())
+	case *ast.Length:
+		return g.generateSimpleFunc(b, "LENGTH", n.Exprs())
+	case *ast.Abs:
+		return g.generateSimpleFunc(b, "ABS", n.Exprs())
+	case *ast.Round:
+		return g.generateSimpleFunc(b, "ROUND", n.Exprs())
+	case *ast.Ceil:
+		return g.generateSimpleFunc(b, "CEIL", n.Exprs())
+	case *ast.Floor:
+		return g.generateSimpleFunc(b, "FLOOR", n.Exprs())
+	case *ast.Concat:
+		return g.generateSimpleFunc(b, "CONCAT", n.Exprs())
+	case *ast.NVL:
+		return g.generateSimpleFunc(b, "NVL", n.Exprs())
 	case *ast.Now:
 		b.WriteString("NOW()")
 		return nil
@@ -267,30 +282,54 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		b.WriteByte(')')
 		return nil
 	// Binary operators
-	case *ast.EQ:         return g.generateBinary(b, n.Left(), n.Right(), "=")
-	case *ast.NEQ:        return g.generateBinary(b, n.Left(), n.Right(), "<>")
-	case *ast.LT:         return g.generateBinary(b, n.Left(), n.Right(), "<")
-	case *ast.LTE:        return g.generateBinary(b, n.Left(), n.Right(), "<=")
-	case *ast.GT:         return g.generateBinary(b, n.Left(), n.Right(), ">")
-	case *ast.GTE:        return g.generateBinary(b, n.Left(), n.Right(), ">=")
-	case *ast.NullSafeEQ: return g.generateBinary(b, n.Left(), n.Right(), "<=>")
-	case *ast.And:        return g.generateBinary(b, n.Left(), n.Right(), "AND")
-	case *ast.Or:         return g.generateBinary(b, n.Left(), n.Right(), "OR")
-	case *ast.Xor:        return g.generateBinary(b, n.Left(), n.Right(), "XOR")
-	case *ast.Add:        return g.generateBinary(b, n.Left(), n.Right(), "+")
-	case *ast.Sub:        return g.generateBinary(b, n.Left(), n.Right(), "-")
-	case *ast.Mul:        return g.generateBinary(b, n.Left(), n.Right(), "*")
-	case *ast.Div:        return g.generateBinary(b, n.Left(), n.Right(), "/")
-	case *ast.IntDiv:     return g.generateBinary(b, n.Left(), n.Right(), "DIV")
-	case *ast.Mod:        return g.generateBinary(b, n.Left(), n.Right(), "%")
-	case *ast.Pow:        return g.generateBinary(b, n.Left(), n.Right(), "^")
-	case *ast.DPipe:      return g.generateBinary(b, n.Left(), n.Right(), "||")
-	case *ast.Like:       return g.generateBinary(b, n.Left(), n.Right(), "LIKE")
-	case *ast.ILike:      return g.generateBinary(b, n.Left(), n.Right(), "ILIKE")
-	case *ast.SimilarTo:  return g.generateBinary(b, n.Left(), n.Right(), "SIMILAR TO")
-	case *ast.RLike:      return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
-	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
-	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
+	case *ast.EQ:
+		return g.generateBinary(b, n.Left(), n.Right(), "=")
+	case *ast.NEQ:
+		return g.generateBinary(b, n.Left(), n.Right(), "<>")
+	case *ast.LT:
+		return g.generateBinary(b, n.Left(), n.Right(), "<")
+	case *ast.LTE:
+		return g.generateBinary(b, n.Left(), n.Right(), "<=")
+	case *ast.GT:
+		return g.generateBinary(b, n.Left(), n.Right(), ">")
+	case *ast.GTE:
+		return g.generateBinary(b, n.Left(), n.Right(), ">=")
+	case *ast.NullSafeEQ:
+		return g.generateBinary(b, n.Left(), n.Right(), "<=>")
+	case *ast.And:
+		return g.generateBinary(b, n.Left(), n.Right(), "AND")
+	case *ast.Or:
+		return g.generateBinary(b, n.Left(), n.Right(), "OR")
+	case *ast.Xor:
+		return g.generateBinary(b, n.Left(), n.Right(), "XOR")
+	case *ast.Add:
+		return g.generateBinary(b, n.Left(), n.Right(), "+")
+	case *ast.Sub:
+		return g.generateBinary(b, n.Left(), n.Right(), "-")
+	case *ast.Mul:
+		return g.generateBinary(b, n.Left(), n.Right(), "*")
+	case *ast.Div:
+		return g.generateBinary(b, n.Left(), n.Right(), "/")
+	case *ast.IntDiv:
+		return g.generateBinary(b, n.Left(), n.Right(), "DIV")
+	case *ast.Mod:
+		return g.generateBinary(b, n.Left(), n.Right(), "%")
+	case *ast.Pow:
+		return g.generateBinary(b, n.Left(), n.Right(), "^")
+	case *ast.DPipe:
+		return g.generateBinary(b, n.Left(), n.Right(), "||")
+	case *ast.Like:
+		return g.generateBinary(b, n.Left(), n.Right(), "LIKE")
+	case *ast.ILike:
+		return g.generateBinary(b, n.Left(), n.Right(), "ILIKE")
+	case *ast.SimilarTo:
+		return g.generateBinary(b, n.Left(), n.Right(), "SIMILAR TO")
+	case *ast.RLike:
+		return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
+	case *ast.Is:
+		return g.generateBinary(b, n.Left(), n.Right(), "IS")
+	case *ast.Escape:
+		return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
 	// DDL
 	case *ast.Create:
 		return g.generateCreate(b, n)
