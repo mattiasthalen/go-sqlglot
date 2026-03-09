@@ -501,6 +501,82 @@ func TestSetOpsAndCTEs(t *testing.T) {
 	}
 }
 
+func TestDML(t *testing.T) {
+	g := generator.New(nil)
+	cases := []struct {
+		name string
+		node ast.Node
+		want string
+	}{
+		{
+			"insert values",
+			func() ast.Node {
+				ins := &ast.Insert{}
+				ins.SetThis(ast.Tbl("users"))
+				ins.SetArg("columns", []ast.Node{ast.Col("", "id"), ast.Col("", "name")})
+				row := &ast.Tuple{}
+				row.AppendExpr(ast.NumberLit("1"))
+				row.AppendExpr(ast.StringLit("Alice"))
+				vals := &ast.Values{}
+				vals.AppendExpr(row)
+				ins.SetArg("expression", vals)
+				return ins
+			}(),
+			"INSERT INTO users (id, name) VALUES (1, 'Alice')",
+		},
+		{
+			"insert select",
+			func() ast.Node {
+				ins := &ast.Insert{}
+				ins.SetThis(ast.Tbl("archive"))
+				sel := ast.NewSelect(ast.Col("", "id"))
+				from := &ast.From{}
+				from.SetThis(ast.Tbl("users"))
+				sel.SetArg("from", from)
+				ins.SetArg("expression", sel)
+				return ins
+			}(),
+			"INSERT INTO archive SELECT id FROM users",
+		},
+		{
+			"update",
+			func() ast.Node {
+				upd := &ast.Update{}
+				upd.SetThis(ast.Tbl("users"))
+				eq1 := ast.Eq(ast.Col("", "name"), ast.StringLit("Bob"))
+				upd.SetArg("expressions", []ast.Node{eq1})
+				w := &ast.Where{}
+				w.SetThis(ast.Eq(ast.Col("", "id"), ast.NumberLit("1")))
+				upd.SetArg("where", w)
+				return upd
+			}(),
+			"UPDATE users SET name = 'Bob' WHERE id = 1",
+		},
+		{
+			"delete",
+			func() ast.Node {
+				del := &ast.Delete{}
+				del.SetThis(ast.Tbl("users"))
+				w := &ast.Where{}
+				w.SetThis(ast.Eq(ast.Col("", "id"), ast.NumberLit("1")))
+				del.SetArg("where", w)
+				return del
+			}(),
+			"DELETE FROM users WHERE id = 1",
+		},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("%s: error: %v", c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s:\n got  %q\n want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {

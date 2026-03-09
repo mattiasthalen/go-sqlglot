@@ -291,6 +291,22 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	case *ast.RLike:      return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
 	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
 	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
+	// DML
+	case *ast.Insert:
+		return g.generateInsert(b, n)
+	case *ast.Values:
+		return g.generateValues(b, n)
+	case *ast.Tuple:
+		b.WriteByte('(')
+		if err := g.generateExprList(b, n.Exprs()); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
+	case *ast.Update:
+		return g.generateUpdate(b, n)
+	case *ast.Delete:
+		return g.generateDelete(b, n)
 	// Set operations, CTEs, subqueries
 	case *ast.Union:
 		right, _ := n.GetArgs()["expression"].(ast.Node)
@@ -477,6 +493,70 @@ func (g *Generator) generateAlias(b *strings.Builder, n *ast.Alias) error {
 	}
 	b.WriteString(" AS ")
 	b.WriteString(n.AliasName())
+	return nil
+}
+
+func (g *Generator) generateInsert(b *strings.Builder, n *ast.Insert) error {
+	b.WriteString("INSERT INTO ")
+	if err := g.generate(b, n.This()); err != nil {
+		return err
+	}
+	if cols, ok := n.GetArgs()["columns"].([]ast.Node); ok && len(cols) > 0 {
+		b.WriteString(" (")
+		if err := g.generateExprList(b, cols); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+	}
+	b.WriteByte(' ')
+	expr, _ := n.GetArgs()["expression"].(ast.Node)
+	return g.generate(b, expr)
+}
+
+func (g *Generator) generateValues(b *strings.Builder, n *ast.Values) error {
+	b.WriteString("VALUES ")
+	rows := n.Exprs()
+	for i, row := range rows {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if err := g.generate(b, row); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateUpdate(b *strings.Builder, n *ast.Update) error {
+	b.WriteString("UPDATE ")
+	if err := g.generate(b, n.This()); err != nil {
+		return err
+	}
+	b.WriteString(" SET ")
+	sets, _ := n.GetArgs()["expressions"].([]ast.Node)
+	if err := g.generateExprList(b, sets); err != nil {
+		return err
+	}
+	if where, ok := n.GetArgs()["where"].(*ast.Where); ok && where != nil {
+		b.WriteString(" WHERE ")
+		if err := g.generate(b, where.This()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateDelete(b *strings.Builder, n *ast.Delete) error {
+	b.WriteString("DELETE FROM ")
+	if err := g.generate(b, n.This()); err != nil {
+		return err
+	}
+	if where, ok := n.GetArgs()["where"].(*ast.Where); ok && where != nil {
+		b.WriteString(" WHERE ")
+		if err := g.generate(b, where.This()); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
