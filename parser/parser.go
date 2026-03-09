@@ -81,10 +81,7 @@ func (p *Parser) match(tt ...tokens.TokenType) (tokens.Token, bool) {
 func (p *Parser) expect(tt tokens.TokenType) (tokens.Token, error) {
 	if !p.check(tt) {
 		cur := p.Peek()
-		return tokens.Token{}, fmt.Errorf(
-			"line %d col %d: expected %v, got %v (%q)",
-			cur.Line, cur.Col, tt, cur.Type, cur.Text,
-		)
+		return tokens.Token{}, p.errorf("expected %v, got %v (%q)", tt, cur.Type, cur.Text)
 	}
 	return p.Advance(), nil
 }
