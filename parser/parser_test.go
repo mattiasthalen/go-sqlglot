@@ -233,6 +233,46 @@ func TestParseNegExpr(t *testing.T) {
 	}
 }
 
+func TestParseTryCast(t *testing.T) {
+	toks, _ := tokens.Tokenize("TRY_CAST(x AS INT)", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.TryCast); !ok {
+		t.Fatalf("expected *ast.TryCast, got %T", node)
+	}
+}
+
+func TestParseCaseSimpleForm(t *testing.T) {
+	toks, _ := tokens.Tokenize("CASE 1 WHEN 1 THEN 'one' ELSE 'other' END", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := node.(*ast.Case); !ok {
+		t.Fatalf("expected *ast.Case, got %T", node)
+	}
+}
+
+func TestParseParenPrecedence(t *testing.T) {
+	toks, _ := tokens.Tokenize("(1+2)*3", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mul, ok := node.(*ast.Mul)
+	if !ok {
+		t.Fatalf("expected *ast.Mul as root, got %T", node)
+	}
+	if _, ok := mul.Left().(*ast.Add); !ok {
+		t.Fatalf("expected *ast.Add as left child of Mul, got %T", mul.Left())
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),

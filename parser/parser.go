@@ -223,12 +223,23 @@ func makeBinaryNode(op tokens.Token, left, right ast.Node) ast.Node {
 		e.SetThis(left)
 		e.SetArg("expression", right)
 		node = e
-	default:
-		// Fallback: use anonymous wrapping (should not happen if binopPrec is correct)
-		e := &ast.EQ{}
+	case tokens.Div:
+		e := &ast.IntDiv{}
 		e.SetThis(left)
 		e.SetArg("expression", right)
 		node = e
+	case tokens.SimilarTo:
+		e := &ast.SimilarTo{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	case tokens.RLike:
+		e := &ast.RLike{}
+		e.SetThis(left)
+		e.SetArg("expression", right)
+		node = e
+	default:
+		panic(fmt.Sprintf("makeBinaryNode: unhandled operator token %v", op.Type))
 	}
 	return node
 }
@@ -237,7 +248,7 @@ func makeBinaryNode(op tokens.Token, left, right ast.Node) ast.Node {
 // Pratt (precedence-climbing) parsing.
 // minPrec=0 parses a full expression.
 func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
-	left, err := p.parseUnary(minPrec)
+	left, err := p.parseUnary()
 	if err != nil {
 		return nil, err
 	}
@@ -248,7 +259,13 @@ func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
 			break
 		}
 		op := p.Advance()
-		right, err := p.ParseExpr(prec) // left-associative: right side uses same prec
+		// Right-associative operators (^ and **) recurse at the same precedence;
+		// all other operators are left-associative and recurse at prec-1.
+		nextPrec := prec - 1
+		if op.Type == tokens.Caret || op.Type == tokens.DStar {
+			nextPrec = prec
+		}
+		right, err := p.ParseExpr(nextPrec)
 		if err != nil {
 			return nil, err
 		}
@@ -258,11 +275,11 @@ func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
 	return left, nil
 }
 
-func (p *Parser) parseUnary(minPrec int) (ast.Node, error) {
+func (p *Parser) parseUnary() (ast.Node, error) {
 	// Unary NOT
 	if p.check(tokens.Not) {
 		p.Advance()
-		operand, err := p.parseUnary(3)
+		operand, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
@@ -273,7 +290,7 @@ func (p *Parser) parseUnary(minPrec int) (ast.Node, error) {
 	// Unary minus
 	if p.check(tokens.Dash) {
 		p.Advance()
-		operand, err := p.parseUnary(10)
+		operand, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
@@ -284,7 +301,7 @@ func (p *Parser) parseUnary(minPrec int) (ast.Node, error) {
 	// Unary bitwise NOT
 	if p.check(tokens.Tilde) {
 		p.Advance()
-		operand, err := p.parseUnary(10)
+		operand, err := p.parseUnary()
 		if err != nil {
 			return nil, err
 		}
@@ -475,6 +492,9 @@ func (p *Parser) parseCase() (ast.Node, error) {
 		w.SetArg("then", result)
 		whens = append(whens, w)
 	}
+	if len(whens) == 0 {
+		return nil, p.errorf("CASE expression requires at least one WHEN clause")
+	}
 	c.SetArg("ifs", whens)
 
 	if _, ok := p.match(tokens.Else); ok {
@@ -529,11 +549,14 @@ func (p *Parser) parseDataType() (*ast.DataType, error) {
 	// Dialect hook first.
 	if p.dialect != nil {
 		if node, handled, err := p.dialect.ParseDataType(p); handled {
+			if err != nil {
+				return nil, err
+			}
 			dt, ok := node.(*ast.DataType)
 			if !ok {
 				return nil, p.errorf("dialect ParseDataType returned non-DataType node")
 			}
-			return dt, err
+			return dt, nil
 		}
 	}
 
