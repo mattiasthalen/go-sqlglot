@@ -88,7 +88,42 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		}
 		b.WriteByte(')')
 		return nil
+	// Binary operators
+	case *ast.EQ:         return g.generateBinary(b, n.Left(), n.Right(), "=")
+	case *ast.NEQ:        return g.generateBinary(b, n.Left(), n.Right(), "<>")
+	case *ast.LT:         return g.generateBinary(b, n.Left(), n.Right(), "<")
+	case *ast.LTE:        return g.generateBinary(b, n.Left(), n.Right(), "<=")
+	case *ast.GT:         return g.generateBinary(b, n.Left(), n.Right(), ">")
+	case *ast.GTE:        return g.generateBinary(b, n.Left(), n.Right(), ">=")
+	case *ast.NullSafeEQ: return g.generateBinary(b, n.Left(), n.Right(), "<=>")
+	case *ast.And:        return g.generateBinary(b, n.Left(), n.Right(), "AND")
+	case *ast.Or:         return g.generateBinary(b, n.Left(), n.Right(), "OR")
+	case *ast.Xor:        return g.generateBinary(b, n.Left(), n.Right(), "XOR")
+	case *ast.Add:        return g.generateBinary(b, n.Left(), n.Right(), "+")
+	case *ast.Sub:        return g.generateBinary(b, n.Left(), n.Right(), "-")
+	case *ast.Mul:        return g.generateBinary(b, n.Left(), n.Right(), "*")
+	case *ast.Div:        return g.generateBinary(b, n.Left(), n.Right(), "/")
+	case *ast.IntDiv:     return g.generateBinary(b, n.Left(), n.Right(), "DIV")
+	case *ast.Mod:        return g.generateBinary(b, n.Left(), n.Right(), "%")
+	case *ast.Pow:        return g.generateBinary(b, n.Left(), n.Right(), "^")
+	case *ast.DPipe:      return g.generateBinary(b, n.Left(), n.Right(), "||")
+	case *ast.Like:       return g.generateBinary(b, n.Left(), n.Right(), "LIKE")
+	case *ast.ILike:      return g.generateBinary(b, n.Left(), n.Right(), "ILIKE")
+	case *ast.SimilarTo:  return g.generateBinary(b, n.Left(), n.Right(), "SIMILAR TO")
+	case *ast.RLike:      return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
+	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
+	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
 	}
+}
+
+func (g *Generator) generateBinary(b *strings.Builder, left, right ast.Node, op string) error {
+	if err := g.generate(b, left); err != nil {
+		return err
+	}
+	b.WriteString(" ")
+	b.WriteString(op)
+	b.WriteString(" ")
+	return g.generate(b, right)
 }
 
 // GenerateError is returned when the generator encounters an unsupported node.

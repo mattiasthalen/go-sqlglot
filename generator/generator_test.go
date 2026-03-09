@@ -62,6 +62,51 @@ func TestRefs(t *testing.T) {
 	}
 }
 
+func TestBinaryOps(t *testing.T) {
+	g := generator.New(nil)
+	a := ast.Col("", "a")
+	b := ast.Col("", "b")
+	cases := []struct {
+		node ast.Node
+		want string
+	}{
+		{ast.Eq(a, b), "a = b"},
+		{ast.Neq(a, b), "a <> b"},
+		{ast.Lt(a, b), "a < b"},
+		{ast.Lte(a, b), "a <= b"},
+		{ast.Gt(a, b), "a > b"},
+		{ast.Gte(a, b), "a >= b"},
+		{func() ast.Node { n := &ast.NullSafeEQ{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a <=> b"},
+		{func() ast.Node { n := &ast.And{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a AND b"},
+		{func() ast.Node { n := &ast.Or{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a OR b"},
+		{func() ast.Node { n := &ast.Xor{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a XOR b"},
+		{func() ast.Node { n := &ast.Add{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a + b"},
+		{func() ast.Node { n := &ast.Sub{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a - b"},
+		{func() ast.Node { n := &ast.Mul{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a * b"},
+		{func() ast.Node { n := &ast.Div{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a / b"},
+		{func() ast.Node { n := &ast.IntDiv{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a DIV b"},
+		{func() ast.Node { n := &ast.Mod{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a % b"},
+		{func() ast.Node { n := &ast.Pow{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a ^ b"},
+		{func() ast.Node { n := &ast.DPipe{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a || b"},
+		{func() ast.Node { n := &ast.Like{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a LIKE b"},
+		{func() ast.Node { n := &ast.ILike{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a ILIKE b"},
+		{func() ast.Node { n := &ast.SimilarTo{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a SIMILAR TO b"},
+		{func() ast.Node { n := &ast.RLike{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a RLIKE b"},
+		{func() ast.Node { n := &ast.Is{}; n.SetThis(a); n.SetArg("expression", &ast.Null{}); return n }(), "a IS NULL"},
+		{func() ast.Node { n := &ast.Escape{}; n.SetThis(a); n.SetArg("expression", b); return n }(), "a ESCAPE b"},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("Generate(%T) error: %v", c.node, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("Generate(%T) = %q, want %q", c.node, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {
