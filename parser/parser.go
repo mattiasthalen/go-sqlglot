@@ -909,7 +909,8 @@ func (p *Parser) parseCreate() (ast.Node, error) {
 	p.Advance() // consume CREATE
 	cr := &ast.Create{}
 
-	// OR REPLACE
+	// OR REPLACE — consumed but not stored in the AST.
+	// TODO: propagate the replace flag to ast.Create once the node supports it.
 	if p.check(tokens.Or) {
 		p.Advance()
 		p.match(tokens.Replace)
@@ -1021,11 +1022,6 @@ func (p *Parser) parseColumnDef() (*ast.ColumnDef, error) {
 		} else if p.check(tokens.Identifier, tokens.Var) {
 			upper := strings.ToUpper(p.Peek().Text)
 			switch upper {
-			case "PRIMARY":
-				p.Advance()
-				// consume KEY if present (tokens.Key exists)
-				p.match(tokens.Key)
-				cd.SetArg("primary_key", true)
 			case "UNIQUE":
 				p.Advance()
 				cd.SetArg("unique", true)
