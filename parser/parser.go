@@ -904,11 +904,219 @@ func (p *Parser) parseDelete() (ast.Node, error) {
 	return del, nil
 }
 
-// Stubs for statement types not yet implemented.
-func (p *Parser) parseCreate() (ast.Node, error)   { return nil, p.errorf("not yet implemented: CREATE") }
-func (p *Parser) parseDrop() (ast.Node, error)     { return nil, p.errorf("not yet implemented: DROP") }
-func (p *Parser) parseAlter() (ast.Node, error)    { return nil, p.errorf("not yet implemented: ALTER") }
-func (p *Parser) parseTruncate() (ast.Node, error) { return nil, p.errorf("not yet implemented: TRUNCATE") }
+// parseCreate parses CREATE [OR REPLACE] [TEMP[ORARY]] TABLE|VIEW [IF NOT EXISTS] name ...
+func (p *Parser) parseCreate() (ast.Node, error) {
+	p.Advance() // consume CREATE
+	cr := &ast.Create{}
+
+	// OR REPLACE
+	if p.check(tokens.Or) {
+		p.Advance()
+		p.match(tokens.Replace)
+	}
+
+	// TEMP / TEMPORARY
+	p.match(tokens.Temporary)
+
+	// Kind: TABLE, VIEW, etc. — may be a keyword token or identifier
+	kindTok := p.Advance()
+	kind := strings.ToUpper(kindTok.Text)
+	cr.SetArg("kind", kind)
+
+	// IF NOT EXISTS — IF tokenizes as Var or Identifier
+	if p.check(tokens.Identifier, tokens.Var) && strings.ToUpper(p.Peek().Text) == "IF" {
+		p.Advance() // consume IF
+		if _, err := p.expect(tokens.Not); err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(tokens.Exists); err != nil {
+			return nil, err
+		}
+		cr.SetArg("exists", true)
+	}
+
+	// Object name (possibly schema.name)
+	nameTok := p.Advance()
+	name := nameTok.Text
+	if p.check(tokens.Dot) {
+		p.Advance()
+		name += "." + p.Advance().Text
+	}
+
+	switch kind {
+	case "TABLE":
+		schema := &ast.Schema{}
+		schema.SetArg("this", ast.Ident(name))
+		if _, err := p.expect(tokens.LParen); err != nil {
+			return nil, err
+		}
+		var cols []ast.Node
+		for !p.check(tokens.RParen) && !p.Done() {
+			col, err := p.parseColumnDef()
+			if err != nil {
+				return nil, err
+			}
+			cols = append(cols, col)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		schema.SetArg("expressions", cols)
+		cr.SetThis(schema)
+	case "VIEW":
+		cr.SetArg("this", ast.Ident(name))
+		if _, err := p.expect(tokens.Alias); err != nil { // AS keyword
+			return nil, err
+		}
+		body, err := p.parseSelectStmt()
+		if err != nil {
+			return nil, err
+		}
+		cr.SetArg("expression", body)
+	default:
+		cr.SetArg("this", ast.Ident(name))
+	}
+	return cr, nil
+}
+
+// parseColumnDef parses one column definition: name datatype [constraints...]
+func (p *Parser) parseColumnDef() (*ast.ColumnDef, error) {
+	nameTok := p.Advance()
+	cd := &ast.ColumnDef{}
+	cd.SetArg("this", ast.Ident(nameTok.Text))
+
+	dt, err := p.parseDataType()
+	if err != nil {
+		return nil, err
+	}
+	cd.SetArg("kind", dt)
+
+	// Inline constraints — consume as many as we can recognize
+	for {
+		if p.check(tokens.Not) {
+			p.Advance()
+			p.match(tokens.Null)
+			cd.SetArg("not_null", true)
+		} else if p.check(tokens.Null) {
+			p.Advance()
+		} else if p.check(tokens.Default) {
+			p.Advance()
+			def, err := p.ParseExpr(0)
+			if err != nil {
+				return nil, err
+			}
+			cd.SetArg("default", def)
+		} else if p.check(tokens.AutoIncrement) {
+			p.Advance()
+			cd.SetArg("auto_increment", true)
+		} else if p.check(tokens.PrimaryKey) {
+			p.Advance()
+			cd.SetArg("primary_key", true)
+		} else if p.check(tokens.Unique) {
+			p.Advance()
+			cd.SetArg("unique", true)
+		} else if p.check(tokens.Identifier, tokens.Var) {
+			upper := strings.ToUpper(p.Peek().Text)
+			switch upper {
+			case "PRIMARY":
+				p.Advance()
+				// consume KEY if present (tokens.Key exists)
+				p.match(tokens.Key)
+				cd.SetArg("primary_key", true)
+			case "UNIQUE":
+				p.Advance()
+				cd.SetArg("unique", true)
+			case "AUTO_INCREMENT":
+				p.Advance()
+				cd.SetArg("auto_increment", true)
+			default:
+				return cd, nil
+			}
+		} else {
+			return cd, nil
+		}
+	}
+}
+
+// parseDrop parses DROP kind [IF EXISTS] name [CASCADE]
+func (p *Parser) parseDrop() (ast.Node, error) {
+	p.Advance() // consume DROP
+	dr := &ast.Drop{}
+
+	kindTok := p.Advance()
+	dr.SetArg("kind", strings.ToUpper(kindTok.Text))
+
+	// IF EXISTS — IF tokenizes as Var or Identifier
+	if p.check(tokens.Identifier, tokens.Var) && strings.ToUpper(p.Peek().Text) == "IF" {
+		p.Advance() // consume IF
+		if _, err := p.expect(tokens.Exists); err != nil {
+			return nil, err
+		}
+		dr.SetArg("exists", true)
+	}
+
+	nameTok := p.Advance()
+	name := nameTok.Text
+	if p.check(tokens.Dot) {
+		p.Advance()
+		name += "." + p.Advance().Text
+	}
+	dr.SetArg("this", ast.Ident(name))
+
+	// CASCADE — tokenizes as Var or Identifier
+	if p.check(tokens.Identifier, tokens.Var) && strings.ToUpper(p.Peek().Text) == "CASCADE" {
+		p.Advance()
+		dr.SetArg("cascade", true)
+	}
+
+	return dr, nil
+}
+
+// parseTruncate parses TRUNCATE [TABLE] name [, name ...]
+func (p *Parser) parseTruncate() (ast.Node, error) {
+	p.Advance() // consume TRUNCATE
+	p.match(tokens.Table)
+	tr := &ast.Truncate{}
+	var tables []ast.Node
+	for {
+		nameTok := p.Advance()
+		tbl := &ast.Table{}
+		tbl.SetArg("this", ast.Ident(nameTok.Text))
+		tables = append(tables, tbl)
+		if _, ok := p.match(tokens.Comma); !ok {
+			break
+		}
+	}
+	tr.SetArg("this", tables)
+	return tr, nil
+}
+
+// parseAlter parses ALTER kind name [actions...]
+func (p *Parser) parseAlter() (ast.Node, error) {
+	p.Advance() // consume ALTER
+	al := &ast.Alter{}
+
+	// TABLE / VIEW / etc.
+	kindTok := p.Advance()
+	al.SetArg("kind", strings.ToUpper(kindTok.Text))
+
+	nameTok := p.Advance()
+	al.SetArg("this", ast.Ident(nameTok.Text))
+
+	// Actions: consume remaining tokens as opaque identifier nodes
+	var actions []ast.Node
+	for !p.Done() && !p.check(tokens.Semicolon) {
+		t := p.Advance()
+		id := &ast.Identifier{}
+		id.SetArg("this", t.Text)
+		actions = append(actions, id)
+	}
+	al.SetArg("actions", actions)
+	return al, nil
+}
 
 // parseSelectStmt handles an optional WITH clause then delegates to parseQueryBody.
 func (p *Parser) parseSelectStmt() (ast.Node, error) {

@@ -577,6 +577,83 @@ func TestParseDelete(t *testing.T) {
 	}
 }
 
+func TestParseCreateTable(t *testing.T) {
+	node := parseStmt(t, `CREATE TABLE users (
+		id   INT NOT NULL,
+		name VARCHAR(255)
+	)`)
+	cr, ok := node.(*ast.Create)
+	if !ok {
+		t.Fatalf("expected *ast.Create, got %T", node)
+	}
+	if cr.Kind() != "TABLE" {
+		t.Fatalf("expected kind TABLE, got %q", cr.Kind())
+	}
+	schema, ok := cr.This().(*ast.Schema)
+	if !ok {
+		t.Fatalf("expected *ast.Schema in Create.This(), got %T", cr.This())
+	}
+	if len(schema.Exprs()) != 2 {
+		t.Fatalf("expected 2 column defs, got %d", len(schema.Exprs()))
+	}
+}
+
+func TestParseCreateView(t *testing.T) {
+	node := parseStmt(t, "CREATE VIEW v AS SELECT 1")
+	cr := node.(*ast.Create)
+	if cr.Kind() != "VIEW" {
+		t.Fatalf("expected kind VIEW, got %q", cr.Kind())
+	}
+}
+
+func TestParseCreateIfNotExists(t *testing.T) {
+	node := parseStmt(t, "CREATE TABLE IF NOT EXISTS t (id INT)")
+	cr := node.(*ast.Create)
+	if !cr.IfNotExists() {
+		t.Fatal("expected IfNotExists = true")
+	}
+}
+
+func TestParseDropTable(t *testing.T) {
+	node := parseStmt(t, "DROP TABLE t")
+	dr, ok := node.(*ast.Drop)
+	if !ok {
+		t.Fatalf("expected *ast.Drop, got %T", node)
+	}
+	if dr.Kind() != "TABLE" {
+		t.Fatalf("expected kind TABLE, got %q", dr.Kind())
+	}
+}
+
+func TestParseDropIfExists(t *testing.T) {
+	node := parseStmt(t, "DROP TABLE IF EXISTS t CASCADE")
+	dr := node.(*ast.Drop)
+	if !dr.IfExists() {
+		t.Fatal("expected IfExists = true")
+	}
+	if !dr.Cascade() {
+		t.Fatal("expected Cascade = true")
+	}
+}
+
+func TestParseTruncate(t *testing.T) {
+	node := parseStmt(t, "TRUNCATE TABLE t")
+	if _, ok := node.(*ast.Truncate); !ok {
+		t.Fatalf("expected *ast.Truncate, got %T", node)
+	}
+}
+
+func TestParseAlter(t *testing.T) {
+	node := parseStmt(t, "ALTER TABLE t ADD COLUMN x INT")
+	al, ok := node.(*ast.Alter)
+	if !ok {
+		t.Fatalf("expected *ast.Alter, got %T", node)
+	}
+	if al.This() == nil {
+		t.Fatal("Alter.This() is nil")
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),
