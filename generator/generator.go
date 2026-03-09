@@ -39,6 +39,29 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	// Stubs — will be filled in subsequent tasks.
 	case *ast.Identifier:
 		return g.generateIdentifier(b, n)
+	case *ast.Literal:
+		return g.generateLiteral(b, n)
+	case *ast.Star:
+		b.WriteByte('*')
+		return nil
+	case *ast.Null:
+		b.WriteString("NULL")
+		return nil
+	case *ast.Boolean:
+		v, _ := n.GetArgs()["this"].(bool)
+		if v {
+			b.WriteString("TRUE")
+		} else {
+			b.WriteString("FALSE")
+		}
+		return nil
+	case *ast.Placeholder:
+		s, _ := n.GetArgs()["this"].(string)
+		if s == "" {
+			s = "?"
+		}
+		b.WriteString(s)
+		return nil
 	}
 }
 
@@ -51,5 +74,16 @@ func (e *GenerateError) Error() string { return e.Msg }
 
 func (g *Generator) generateIdentifier(b *strings.Builder, n *ast.Identifier) error {
 	b.WriteString(n.Name())
+	return nil
+}
+
+func (g *Generator) generateLiteral(b *strings.Builder, n *ast.Literal) error {
+	if n.IsString {
+		b.WriteByte('\'')
+		b.WriteString(strings.ReplaceAll(n.Value(), "'", "''"))
+		b.WriteByte('\'')
+	} else {
+		b.WriteString(n.Value())
+	}
 	return nil
 }
