@@ -3,6 +3,7 @@ package sqlglot
 
 import (
 	"github.com/dwarvesf/go-sqlglot/ast"
+	"github.com/dwarvesf/go-sqlglot/generator"
 	"github.com/dwarvesf/go-sqlglot/parser"
 	"github.com/dwarvesf/go-sqlglot/tokens"
 )
@@ -15,4 +16,10 @@ func Parse(sql string) (ast.Node, error) {
 	}
 	p := parser.New(toks, nil)
 	return p.Parse()
+}
+
+// Generate converts an AST node back to a SQL string using the default dialect.
+func Generate(node ast.Node) (string, error) {
+	g := generator.New(nil)
+	return g.Generate(node)
 }
