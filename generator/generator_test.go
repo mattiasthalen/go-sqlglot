@@ -144,6 +144,86 @@ func TestUnaryAndCompound(t *testing.T) {
 	}
 }
 
+func TestSpecialExprs(t *testing.T) {
+	g := generator.New(nil)
+	cases := []struct {
+		node ast.Node
+		want string
+	}{
+		// CASE WHEN a = 1 THEN 'one' ELSE 'other' END
+		{func() ast.Node {
+			w := &ast.When{}
+			w.SetThis(ast.Eq(ast.Col("", "a"), ast.NumberLit("1")))
+			w.SetArg("then", ast.StringLit("one"))
+			c := &ast.Case{}
+			c.AppendExpr(w)
+			c.SetArg("default", ast.StringLit("other"))
+			return c
+		}(), "CASE WHEN a = 1 THEN 'one' ELSE 'other' END"},
+		// CASE expr WHEN 1 THEN 'one' END
+		{func() ast.Node {
+			w := &ast.When{}
+			w.SetThis(ast.NumberLit("1"))
+			w.SetArg("then", ast.StringLit("one"))
+			c := &ast.Case{}
+			c.SetThis(ast.Col("", "x"))
+			c.AppendExpr(w)
+			return c
+		}(), "CASE x WHEN 1 THEN 'one' END"},
+		// IF(a > 1, 'yes', 'no')
+		{func() ast.Node {
+			n := &ast.If{}
+			n.SetThis(ast.Gt(ast.Col("", "a"), ast.NumberLit("1")))
+			n.SetArg("true", ast.StringLit("yes"))
+			n.SetArg("false", ast.StringLit("no"))
+			return n
+		}(), "IF(a > 1, 'yes', 'no')"},
+		// COALESCE(a, b)
+		{func() ast.Node {
+			n := &ast.Coalesce{}
+			n.AppendExpr(ast.Col("", "a"))
+			n.AppendExpr(ast.Col("", "b"))
+			return n
+		}(), "COALESCE(a, b)"},
+		// NULLIF(a, 0)
+		{func() ast.Node {
+			n := &ast.Nullif{}
+			n.AppendExpr(ast.Col("", "a"))
+			n.AppendExpr(ast.NumberLit("0"))
+			return n
+		}(), "NULLIF(a, 0)"},
+		// CAST(a AS INT)
+		{func() ast.Node {
+			dt := &ast.DataType{}
+			dt.SetArg("this", "INT")
+			c := &ast.Cast{}
+			c.SetThis(ast.Col("", "a"))
+			c.SetArg("to", dt)
+			return c
+		}(), "CAST(a AS INT)"},
+		// TRY_CAST(a AS VARCHAR(255))
+		{func() ast.Node {
+			dt := &ast.DataType{}
+			dt.SetArg("this", "VARCHAR")
+			dt.AppendExpr(ast.NumberLit("255"))
+			c := &ast.TryCast{}
+			c.SetThis(ast.Col("", "a"))
+			c.SetArg("to", dt)
+			return c
+		}(), "TRY_CAST(a AS VARCHAR(255))"},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("Generate(%T) error: %v", c.node, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("Generate(%T) = %q, want %q", c.node, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {

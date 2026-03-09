@@ -88,6 +88,85 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		}
 		b.WriteByte(')')
 		return nil
+	// Case/When/If/Coalesce/Nullif/Cast/DataType
+	case *ast.When:
+		b.WriteString("WHEN ")
+		if err := g.generate(b, n.This()); err != nil {
+			return err
+		}
+		b.WriteString(" THEN ")
+		then, _ := n.GetArgs()["then"].(ast.Node)
+		return g.generate(b, then)
+	case *ast.Case:
+		b.WriteString("CASE")
+		if subj := n.This(); subj != nil {
+			b.WriteByte(' ')
+			if err := g.generate(b, subj); err != nil {
+				return err
+			}
+		}
+		for _, w := range n.Exprs() {
+			b.WriteByte(' ')
+			if err := g.generate(b, w); err != nil {
+				return err
+			}
+		}
+		if def := n.Default(); def != nil {
+			b.WriteString(" ELSE ")
+			if err := g.generate(b, def); err != nil {
+				return err
+			}
+		}
+		b.WriteString(" END")
+		return nil
+	case *ast.If:
+		b.WriteString("IF(")
+		if err := g.generate(b, n.This()); err != nil {
+			return err
+		}
+		b.WriteString(", ")
+		trueVal, _ := n.GetArgs()["true"].(ast.Node)
+		if err := g.generate(b, trueVal); err != nil {
+			return err
+		}
+		b.WriteString(", ")
+		falseVal, _ := n.GetArgs()["false"].(ast.Node)
+		if err := g.generate(b, falseVal); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
+	case *ast.Coalesce:
+		b.WriteString("COALESCE(")
+		if err := g.generateExprList(b, n.Exprs()); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
+	case *ast.Nullif:
+		b.WriteString("NULLIF(")
+		if err := g.generateExprList(b, n.Exprs()); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
+	case *ast.DataType:
+		return g.generateDataType(b, n)
+	case *ast.Cast:
+		return g.generateCastNode(b, n)
+	case *ast.TryCast:
+		b.WriteString("TRY_CAST(")
+		inner, _ := n.GetArgs()["this"].(ast.Node)
+		if err := g.generate(b, inner); err != nil {
+			return err
+		}
+		b.WriteString(" AS ")
+		dt, _ := n.GetArgs()["to"].(*ast.DataType)
+		if err := g.generateDataType(b, dt); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
 	// Unary operators
 	case *ast.Not:
 		b.WriteString("NOT ")
@@ -154,6 +233,68 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
 	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
 	}
+}
+
+func (g *Generator) generateExprList(b *strings.Builder, nodes []ast.Node) error {
+	for i, n := range nodes {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if err := g.generate(b, n); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateDataType(b *strings.Builder, n *ast.DataType) error {
+	if n == nil {
+		return nil
+	}
+	if g.dialect != nil {
+		sql, handled, err := g.dialect.GenerateDataType(g, n)
+		if err != nil {
+			return err
+		}
+		if handled {
+			b.WriteString(sql)
+			return nil
+		}
+	}
+	b.WriteString(n.TypeName())
+	params := n.Exprs()
+	if len(params) > 0 {
+		b.WriteByte('(')
+		if err := g.generateExprList(b, params); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+	}
+	return nil
+}
+
+func (g *Generator) generateCastNode(b *strings.Builder, n *ast.Cast) error {
+	if g.dialect != nil {
+		sql, handled, err := g.dialect.GenerateCast(g, n)
+		if err != nil {
+			return err
+		}
+		if handled {
+			b.WriteString(sql)
+			return nil
+		}
+	}
+	b.WriteString("CAST(")
+	inner, _ := n.GetArgs()["this"].(ast.Node)
+	if err := g.generate(b, inner); err != nil {
+		return err
+	}
+	b.WriteString(" AS ")
+	if err := g.generateDataType(b, n.To()); err != nil {
+		return err
+	}
+	b.WriteByte(')')
+	return nil
 }
 
 func (g *Generator) generateBinary(b *strings.Builder, left, right ast.Node, op string) error {
