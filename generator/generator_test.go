@@ -14,6 +14,54 @@ func TestNew(t *testing.T) {
 	}
 }
 
+func TestRefs(t *testing.T) {
+	g := generator.New(nil)
+	cases := []struct {
+		node ast.Node
+		want string
+	}{
+		// Column: bare
+		{ast.Col("", "id"), "id"},
+		// Column: qualified
+		{ast.Col("users", "id"), "users.id"},
+		// Table: bare
+		{ast.Tbl("users"), "users"},
+		// Table: with alias
+		{func() ast.Node {
+			t := ast.Tbl("users")
+			ta := &ast.TableAlias{}
+			ta.SetArg("this", ast.Ident("u"))
+			t.SetArg("alias", ta)
+			return t
+		}(), "users AS u"},
+		// Alias: expr AS name
+		{ast.As(ast.Col("", "id"), "user_id"), "id AS user_id"},
+		// Dot
+		{func() ast.Node {
+			d := &ast.Dot{}
+			d.SetArg("this", ast.Ident("schema"))
+			d.SetArg("expression", ast.Ident("table"))
+			return d
+		}(), "schema.table"},
+		// Paren
+		{func() ast.Node {
+			p := &ast.Paren{}
+			p.SetThis(ast.NumberLit("1"))
+			return p
+		}(), "(1)"},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("Generate(%T) error: %v", c.node, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("Generate(%T) = %q, want %q", c.node, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {

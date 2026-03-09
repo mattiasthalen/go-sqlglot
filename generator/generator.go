@@ -62,6 +62,32 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		}
 		b.WriteString(s)
 		return nil
+	case *ast.Column:
+		return g.generateColumn(b, n)
+	case *ast.Table:
+		return g.generateTable(b, n)
+	case *ast.TableAlias:
+		id, _ := n.GetArgs()["this"].(*ast.Identifier)
+		if id != nil {
+			b.WriteString(id.Name())
+		}
+		return nil
+	case *ast.Alias:
+		return g.generateAlias(b, n)
+	case *ast.Dot:
+		if err := g.generate(b, n.Left()); err != nil {
+			return err
+		}
+		b.WriteByte('.')
+		return g.generate(b, n.Right())
+	case *ast.Paren:
+		inner, _ := n.GetArgs()["this"].(ast.Node)
+		b.WriteByte('(')
+		if err := g.generate(b, inner); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
 	}
 }
 
@@ -74,6 +100,37 @@ func (e *GenerateError) Error() string { return e.Msg }
 
 func (g *Generator) generateIdentifier(b *strings.Builder, n *ast.Identifier) error {
 	b.WriteString(n.Name())
+	return nil
+}
+
+func (g *Generator) generateColumn(b *strings.Builder, n *ast.Column) error {
+	if tbl := n.TableName(); tbl != "" {
+		b.WriteString(tbl)
+		b.WriteByte('.')
+	}
+	b.WriteString(n.Name())
+	return nil
+}
+
+func (g *Generator) generateTable(b *strings.Builder, n *ast.Table) error {
+	b.WriteString(n.Name())
+	if alias, ok := n.GetArgs()["alias"].(*ast.TableAlias); ok && alias != nil {
+		b.WriteString(" AS ")
+		id, _ := alias.GetArgs()["this"].(*ast.Identifier)
+		if id != nil {
+			b.WriteString(id.Name())
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateAlias(b *strings.Builder, n *ast.Alias) error {
+	inner, _ := n.GetArgs()["this"].(ast.Node)
+	if err := g.generate(b, inner); err != nil {
+		return err
+	}
+	b.WriteString(" AS ")
+	b.WriteString(n.AliasName())
 	return nil
 }
 
