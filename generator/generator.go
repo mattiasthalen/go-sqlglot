@@ -291,6 +291,41 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	case *ast.RLike:      return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
 	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
 	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
+	// SELECT and its clauses
+	case *ast.Select:
+		return g.generateSelect(b, n)
+	case *ast.From:
+		return g.generateFrom(b, n)
+	case *ast.Join:
+		return g.generateJoin(b, n)
+	case *ast.Where:
+		b.WriteString("WHERE ")
+		return g.generate(b, n.This())
+	case *ast.Having:
+		b.WriteString("HAVING ")
+		return g.generate(b, n.This())
+	case *ast.Group:
+		b.WriteString("GROUP BY ")
+		return g.generateExprList(b, n.Exprs())
+	case *ast.Order:
+		b.WriteString("ORDER BY ")
+		return g.generateExprList(b, n.Exprs())
+	case *ast.Ordered:
+		if err := g.generate(b, n.This()); err != nil {
+			return err
+		}
+		if n.Desc() {
+			b.WriteString(" DESC")
+		} else {
+			b.WriteString(" ASC")
+		}
+		return nil
+	case *ast.Limit:
+		b.WriteString("LIMIT ")
+		return g.generate(b, n.This())
+	case *ast.Offset:
+		b.WriteString("OFFSET ")
+		return g.generate(b, n.This())
 	}
 }
 
@@ -416,6 +451,128 @@ func (g *Generator) generateAlias(b *strings.Builder, n *ast.Alias) error {
 	}
 	b.WriteString(" AS ")
 	b.WriteString(n.AliasName())
+	return nil
+}
+
+func (g *Generator) generateSelect(b *strings.Builder, n *ast.Select) error {
+	// WITH clause
+	if with, ok := n.GetArgs()["with"].(*ast.With); ok && with != nil {
+		if err := g.generateWith(b, with); err != nil {
+			return err
+		}
+		b.WriteByte(' ')
+	}
+
+	b.WriteString("SELECT")
+	if n.Distinct() {
+		b.WriteString(" DISTINCT")
+	}
+
+	exprs := n.Exprs()
+	if len(exprs) > 0 {
+		b.WriteByte(' ')
+		if err := g.generateExprList(b, exprs); err != nil {
+			return err
+		}
+	}
+
+	if from := n.GetFrom(); from != nil {
+		b.WriteString(" FROM ")
+		if err := g.generateFrom(b, from); err != nil {
+			return err
+		}
+	}
+
+	if where := n.GetWhere(); where != nil {
+		b.WriteString(" WHERE ")
+		if err := g.generate(b, where.This()); err != nil {
+			return err
+		}
+	}
+
+	if group, ok := n.GetArgs()["group"].(*ast.Group); ok && group != nil {
+		b.WriteString(" GROUP BY ")
+		if err := g.generateExprList(b, group.Exprs()); err != nil {
+			return err
+		}
+	}
+
+	if having, ok := n.GetArgs()["having"].(*ast.Having); ok && having != nil {
+		b.WriteString(" HAVING ")
+		if err := g.generate(b, having.This()); err != nil {
+			return err
+		}
+	}
+
+	if order := n.GetOrder(); order != nil {
+		b.WriteString(" ORDER BY ")
+		if err := g.generateExprList(b, order.Exprs()); err != nil {
+			return err
+		}
+	}
+
+	if limit := n.GetLimit(); limit != nil {
+		b.WriteString(" LIMIT ")
+		if err := g.generate(b, limit.This()); err != nil {
+			return err
+		}
+	}
+
+	if offset := n.GetOffset(); offset != nil {
+		b.WriteString(" OFFSET ")
+		if err := g.generate(b, offset.This()); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (g *Generator) generateFrom(b *strings.Builder, n *ast.From) error {
+	if err := g.generate(b, n.This()); err != nil {
+		return err
+	}
+	for _, join := range n.Exprs() {
+		b.WriteByte(' ')
+		if err := g.generate(b, join); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateJoin(b *strings.Builder, n *ast.Join) error {
+	kind := n.Kind()
+	if kind == "" {
+		kind = "INNER"
+	}
+	b.WriteString(kind)
+	b.WriteString(" JOIN ")
+	if err := g.generate(b, n.This()); err != nil {
+		return err
+	}
+	if on := n.On(); on != nil {
+		b.WriteString(" ON ")
+		if err := g.generate(b, on); err != nil {
+			return err
+		}
+	}
+	if usingRaw, ok := n.GetArgs()["using"]; ok {
+		using, _ := usingRaw.([]ast.Node)
+		if len(using) > 0 {
+			b.WriteString(" USING (")
+			if err := g.generateExprList(b, using); err != nil {
+				return err
+			}
+			b.WriteByte(')')
+		}
+	}
+	return nil
+}
+
+// generateWith stub — replaced by real implementation in Task 9.
+func (g *Generator) generateWith(b *strings.Builder, n *ast.With) error {
+	_ = n
 	return nil
 }
 

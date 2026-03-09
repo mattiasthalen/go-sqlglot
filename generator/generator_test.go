@@ -315,6 +315,98 @@ func TestFunctions(t *testing.T) {
 	}
 }
 
+func TestSelect(t *testing.T) {
+	g := generator.New(nil)
+	cases := []struct {
+		name string
+		node ast.Node
+		want string
+	}{
+		{
+			"simple select",
+			func() ast.Node {
+				s := ast.NewSelect(ast.Col("", "id"), ast.Col("", "name"))
+				from := &ast.From{}
+				from.SetThis(ast.Tbl("users"))
+				s.SetArg("from", from)
+				return s
+			}(),
+			"SELECT id, name FROM users",
+		},
+		{
+			"select distinct",
+			func() ast.Node {
+				s := ast.NewSelect(ast.Col("", "id"))
+				s.SetArg("distinct", true)
+				return s
+			}(),
+			"SELECT DISTINCT id",
+		},
+		{
+			"select with where",
+			func() ast.Node {
+				s := ast.NewSelect(&ast.Star{})
+				from := &ast.From{}
+				from.SetThis(ast.Tbl("users"))
+				s.SetArg("from", from)
+				active := ast.Col("", "active")
+				trueVal := &ast.Boolean{}
+				trueVal.SetArg("this", true)
+				w := &ast.Where{}
+				w.SetThis(ast.Eq(active, trueVal))
+				s.SetArg("where", w)
+				return s
+			}(),
+			"SELECT * FROM users WHERE active = TRUE",
+		},
+		{
+			"select with group by, having, order by, limit, offset",
+			func() ast.Node {
+				s := ast.NewSelect(ast.Col("", "dept"), func() ast.Node {
+					n := &ast.Count{}
+					n.SetThis(&ast.Star{})
+					return ast.As(n, "cnt")
+				}())
+				from := &ast.From{}
+				from.SetThis(ast.Tbl("employees"))
+				s.SetArg("from", from)
+				grp := &ast.Group{}
+				grp.AppendExpr(ast.Col("", "dept"))
+				s.SetArg("group", grp)
+				cntNode := &ast.Count{}
+				cntNode.SetThis(&ast.Star{})
+				having := &ast.Having{}
+				having.SetThis(ast.Gt(cntNode, ast.NumberLit("5")))
+				s.SetArg("having", having)
+				ord := &ast.Ordered{}
+				ord.SetThis(ast.Col("", "cnt"))
+				ord.SetArg("desc", true)
+				order := &ast.Order{}
+				order.AppendExpr(ord)
+				s.SetArg("order", order)
+				lim := &ast.Limit{}
+				lim.SetThis(ast.NumberLit("10"))
+				s.SetArg("limit", lim)
+				off := &ast.Offset{}
+				off.SetThis(ast.NumberLit("20"))
+				s.SetArg("offset", off)
+				return s
+			}(),
+			"SELECT dept, COUNT(*) AS cnt FROM employees GROUP BY dept HAVING COUNT(*) > 5 ORDER BY cnt DESC LIMIT 10 OFFSET 20",
+		},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("%s: Generate error: %v", c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s:\n got  %q\n want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {
