@@ -743,10 +743,168 @@ func (p *Parser) Parse() (ast.Node, error) {
 	}
 }
 
+// parseInsert parses INSERT INTO table [(cols)] VALUES (...) | SELECT ...
+func (p *Parser) parseInsert() (ast.Node, error) {
+	p.Advance() // consume INSERT
+	p.match(tokens.Into)
+
+	ins := &ast.Insert{}
+
+	tbl, err := p.parseTableRef()
+	if err != nil {
+		return nil, err
+	}
+	ins.SetThis(tbl)
+
+	// Optional column list: (a, b, c)
+	if p.check(tokens.LParen) {
+		p.Advance()
+		var cols []ast.Node
+		for {
+			c, err := p.ParseExpr(0)
+			if err != nil {
+				return nil, err
+			}
+			cols = append(cols, c)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		ins.SetArg("columns", cols)
+	}
+
+	// VALUES or SELECT
+	if _, ok := p.match(tokens.Values); ok {
+		vals, err := p.parseValuesList()
+		if err != nil {
+			return nil, err
+		}
+		ins.SetArg("expression", vals)
+	} else {
+		sel, err := p.parseSelectStmt()
+		if err != nil {
+			return nil, err
+		}
+		ins.SetArg("expression", sel)
+	}
+	return ins, nil
+}
+
+// parseValuesList parses VALUES (row1), (row2), ...
+func (p *Parser) parseValuesList() (*ast.Values, error) {
+	v := &ast.Values{}
+	for {
+		if _, err := p.expect(tokens.LParen); err != nil {
+			return nil, err
+		}
+		var items []ast.Node
+		if !p.check(tokens.RParen) {
+			for {
+				item, err := p.ParseExpr(0)
+				if err != nil {
+					return nil, err
+				}
+				items = append(items, item)
+				if _, ok := p.match(tokens.Comma); !ok {
+					break
+				}
+			}
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		row := &ast.Tuple{}
+		for _, item := range items {
+			row.AppendExpr(item)
+		}
+		v.AppendExpr(row)
+		if _, ok := p.match(tokens.Comma); !ok {
+			break
+		}
+	}
+	return v, nil
+}
+
+// parseUpdate parses UPDATE table SET col=val [, ...] [WHERE ...]
+func (p *Parser) parseUpdate() (ast.Node, error) {
+	p.Advance() // consume UPDATE
+	upd := &ast.Update{}
+
+	tbl, err := p.parseTableRef()
+	if err != nil {
+		return nil, err
+	}
+	upd.SetThis(tbl)
+
+	if _, err := p.expect(tokens.Set); err != nil {
+		return nil, err
+	}
+
+	var sets []ast.Node
+	for {
+		// Parse only the column reference (not a full expression) so we
+		// don't accidentally consume the '=' as a binary operator.
+		lhs, err := p.parseUnary()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(tokens.Eq); err != nil {
+			return nil, err
+		}
+		rhs, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		eq := &ast.EQ{}
+		eq.SetThis(lhs)
+		eq.SetArg("expression", rhs)
+		sets = append(sets, eq)
+		if _, ok := p.match(tokens.Comma); !ok {
+			break
+		}
+	}
+	upd.SetArg("expressions", sets)
+
+	if _, ok := p.match(tokens.Where); ok {
+		cond, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		w := &ast.Where{}
+		w.SetThis(cond)
+		upd.SetArg("where", w)
+	}
+	return upd, nil
+}
+
+// parseDelete parses DELETE FROM table [WHERE ...]
+func (p *Parser) parseDelete() (ast.Node, error) {
+	p.Advance() // consume DELETE
+	p.match(tokens.From)
+	del := &ast.Delete{}
+
+	tbl, err := p.parseTableRef()
+	if err != nil {
+		return nil, err
+	}
+	del.SetThis(tbl)
+
+	if _, ok := p.match(tokens.Where); ok {
+		cond, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		w := &ast.Where{}
+		w.SetThis(cond)
+		del.SetArg("where", w)
+	}
+	return del, nil
+}
+
 // Stubs for statement types not yet implemented.
-func (p *Parser) parseInsert() (ast.Node, error)   { return nil, p.errorf("not yet implemented: INSERT") }
-func (p *Parser) parseUpdate() (ast.Node, error)   { return nil, p.errorf("not yet implemented: UPDATE") }
-func (p *Parser) parseDelete() (ast.Node, error)   { return nil, p.errorf("not yet implemented: DELETE") }
 func (p *Parser) parseCreate() (ast.Node, error)   { return nil, p.errorf("not yet implemented: CREATE") }
 func (p *Parser) parseDrop() (ast.Node, error)     { return nil, p.errorf("not yet implemented: DROP") }
 func (p *Parser) parseAlter() (ast.Node, error)    { return nil, p.errorf("not yet implemented: ALTER") }

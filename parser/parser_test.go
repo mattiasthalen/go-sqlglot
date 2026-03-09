@@ -534,6 +534,49 @@ func TestParseSelectOrderLimit(t *testing.T) {
 	}
 }
 
+func TestParseInsert(t *testing.T) {
+	node := parseStmt(t, "INSERT INTO t (a, b) VALUES (1, 'x')")
+	ins, ok := node.(*ast.Insert)
+	if !ok {
+		t.Fatalf("expected *ast.Insert, got %T", node)
+	}
+	if ins.This() == nil {
+		t.Fatal("Insert.This() (target table) is nil")
+	}
+}
+
+func TestParseInsertSelect(t *testing.T) {
+	node := parseStmt(t, "INSERT INTO t SELECT a FROM s")
+	if _, ok := node.(*ast.Insert); !ok {
+		t.Fatalf("expected *ast.Insert, got %T", node)
+	}
+}
+
+func TestParseUpdate(t *testing.T) {
+	node := parseStmt(t, "UPDATE t SET a = 1, b = 'x' WHERE id = 42")
+	upd, ok := node.(*ast.Update)
+	if !ok {
+		t.Fatalf("expected *ast.Update, got %T", node)
+	}
+	if upd.GetArgs()["expressions"] == nil {
+		t.Fatal("Update has no SET expressions")
+	}
+	if upd.GetArgs()["where"] == nil {
+		t.Fatal("Update has no WHERE")
+	}
+}
+
+func TestParseDelete(t *testing.T) {
+	node := parseStmt(t, "DELETE FROM t WHERE id = 1")
+	del, ok := node.(*ast.Delete)
+	if !ok {
+		t.Fatalf("expected *ast.Delete, got %T", node)
+	}
+	if del.GetArgs()["where"] == nil {
+		t.Fatal("Delete has no WHERE")
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),
