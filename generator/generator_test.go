@@ -407,6 +407,100 @@ func TestSelect(t *testing.T) {
 	}
 }
 
+func TestSetOpsAndCTEs(t *testing.T) {
+	g := generator.New(nil)
+	s1 := ast.NewSelect(ast.Col("", "id"))
+	s2 := ast.NewSelect(ast.Col("", "id"))
+
+	cases := []struct {
+		name string
+		node ast.Node
+		want string
+	}{
+		{
+			"union all",
+			func() ast.Node {
+				u := &ast.Union{}
+				u.SetThis(s1)
+				u.SetArg("expression", s2)
+				u.SetArg("distinct", false)
+				return u
+			}(),
+			"SELECT id UNION ALL SELECT id",
+		},
+		{
+			"union distinct",
+			func() ast.Node {
+				u := &ast.Union{}
+				u.SetThis(s1)
+				u.SetArg("expression", s2)
+				u.SetArg("distinct", true)
+				return u
+			}(),
+			"SELECT id UNION SELECT id",
+		},
+		{
+			"except",
+			func() ast.Node {
+				e := &ast.Except{}
+				e.SetThis(s1)
+				e.SetArg("expression", s2)
+				e.SetArg("distinct", true)
+				return e
+			}(),
+			"SELECT id EXCEPT SELECT id",
+		},
+		{
+			"intersect all",
+			func() ast.Node {
+				i := &ast.Intersect{}
+				i.SetThis(s1)
+				i.SetArg("expression", s2)
+				i.SetArg("distinct", false)
+				return i
+			}(),
+			"SELECT id INTERSECT ALL SELECT id",
+		},
+		{
+			"subquery with alias",
+			func() ast.Node {
+				sq := &ast.Subquery{}
+				sq.SetThis(s1)
+				sq.SetArg("alias", ast.Ident("sub"))
+				return sq
+			}(),
+			"(SELECT id) AS sub",
+		},
+		{
+			"with cte",
+			func() ast.Node {
+				cte := &ast.CTE{}
+				cte.SetArg("this", ast.Ident("cte1"))
+				cte.SetArg("query", s1)
+				with := &ast.With{}
+				with.AppendExpr(cte)
+				inner := ast.NewSelect(ast.Col("", "id"))
+				from := &ast.From{}
+				from.SetThis(ast.Tbl("cte1"))
+				inner.SetArg("from", from)
+				inner.SetArg("with", with)
+				return inner
+			}(),
+			"WITH cte1 AS (SELECT id) SELECT id FROM cte1",
+		},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("%s: error: %v", c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s:\n got  %q\n want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {

@@ -291,6 +291,32 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	case *ast.RLike:      return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
 	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
 	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
+	// Set operations, CTEs, subqueries
+	case *ast.Union:
+		right, _ := n.GetArgs()["expression"].(ast.Node)
+		return g.generateSetOp(b, n.This(), right, "UNION", n.Distinct())
+	case *ast.Except:
+		right, _ := n.GetArgs()["expression"].(ast.Node)
+		return g.generateSetOp(b, n.This(), right, "EXCEPT", n.Distinct())
+	case *ast.Intersect:
+		right, _ := n.GetArgs()["expression"].(ast.Node)
+		return g.generateSetOp(b, n.This(), right, "INTERSECT", n.Distinct())
+	case *ast.Subquery:
+		return g.generateSubquery(b, n)
+	case *ast.With:
+		return g.generateWith(b, n)
+	case *ast.CTE:
+		name, _ := n.GetArgs()["this"].(*ast.Identifier)
+		if name != nil {
+			b.WriteString(name.Name())
+		}
+		b.WriteString(" AS (")
+		query, _ := n.GetArgs()["query"].(ast.Node)
+		if err := g.generate(b, query); err != nil {
+			return err
+		}
+		b.WriteByte(')')
+		return nil
 	// SELECT and its clauses
 	case *ast.Select:
 		return g.generateSelect(b, n)
@@ -570,9 +596,48 @@ func (g *Generator) generateJoin(b *strings.Builder, n *ast.Join) error {
 	return nil
 }
 
-// generateWith stub — replaced by real implementation in Task 9.
+func (g *Generator) generateSetOp(b *strings.Builder, left, right ast.Node, op string, distinct bool) error {
+	if err := g.generate(b, left); err != nil {
+		return err
+	}
+	b.WriteString(" ")
+	b.WriteString(op)
+	if !distinct {
+		b.WriteString(" ALL")
+	}
+	b.WriteString(" ")
+	return g.generate(b, right)
+}
+
+func (g *Generator) generateSubquery(b *strings.Builder, n *ast.Subquery) error {
+	b.WriteByte('(')
+	inner, _ := n.GetArgs()["this"].(ast.Node)
+	if err := g.generate(b, inner); err != nil {
+		return err
+	}
+	b.WriteByte(')')
+	if alias, ok := n.GetArgs()["alias"].(*ast.Identifier); ok && alias != nil {
+		b.WriteString(" AS ")
+		b.WriteString(alias.Name())
+	}
+	return nil
+}
+
 func (g *Generator) generateWith(b *strings.Builder, n *ast.With) error {
-	_ = n
+	b.WriteString("WITH")
+	if n.Recursive() {
+		b.WriteString(" RECURSIVE")
+	}
+	b.WriteByte(' ')
+	ctes := n.Exprs()
+	for i, cte := range ctes {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if err := g.generate(b, cte); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
