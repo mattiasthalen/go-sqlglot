@@ -88,6 +88,46 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 		}
 		b.WriteByte(')')
 		return nil
+	// Unary operators
+	case *ast.Not:
+		b.WriteString("NOT ")
+		return g.generate(b, n.Operand())
+	case *ast.Neg:
+		b.WriteByte('-')
+		return g.generate(b, n.Operand())
+	case *ast.BitwiseNot:
+		b.WriteByte('~')
+		return g.generate(b, n.Operand())
+	case *ast.Exists:
+		b.WriteString("EXISTS ")
+		return g.generate(b, n.Operand())
+	// Compound operators
+	case *ast.Between:
+		if err := g.generate(b, n.This()); err != nil {
+			return err
+		}
+		b.WriteString(" BETWEEN ")
+		if err := g.generate(b, n.Low()); err != nil {
+			return err
+		}
+		b.WriteString(" AND ")
+		return g.generate(b, n.High())
+	case *ast.In:
+		if err := g.generate(b, n.This()); err != nil {
+			return err
+		}
+		b.WriteString(" IN (")
+		items, _ := n.GetArgs()["expressions"].([]ast.Node)
+		for i, item := range items {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			if err := g.generate(b, item); err != nil {
+				return err
+			}
+		}
+		b.WriteByte(')')
+		return nil
 	// Binary operators
 	case *ast.EQ:         return g.generateBinary(b, n.Left(), n.Right(), "=")
 	case *ast.NEQ:        return g.generateBinary(b, n.Left(), n.Right(), "<>")

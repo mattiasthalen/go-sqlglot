@@ -107,6 +107,43 @@ func TestBinaryOps(t *testing.T) {
 	}
 }
 
+func TestUnaryAndCompound(t *testing.T) {
+	g := generator.New(nil)
+	a := ast.Col("", "a")
+	cases := []struct {
+		node ast.Node
+		want string
+	}{
+		{func() ast.Node { n := &ast.Not{}; n.SetThis(a); return n }(), "NOT a"},
+		{func() ast.Node { n := &ast.Neg{}; n.SetThis(a); return n }(), "-a"},
+		{func() ast.Node { n := &ast.BitwiseNot{}; n.SetThis(a); return n }(), "~a"},
+		{func() ast.Node { n := &ast.Exists{}; n.SetThis(a); return n }(), "EXISTS a"},
+		{func() ast.Node {
+			n := &ast.Between{}
+			n.SetThis(a)
+			n.SetArg("low", ast.NumberLit("1"))
+			n.SetArg("high", ast.NumberLit("10"))
+			return n
+		}(), "a BETWEEN 1 AND 10"},
+		{func() ast.Node {
+			n := &ast.In{}
+			n.SetThis(a)
+			n.SetArg("expressions", []ast.Node{ast.NumberLit("1"), ast.NumberLit("2"), ast.NumberLit("3")})
+			return n
+		}(), "a IN (1, 2, 3)"},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("Generate(%T) error: %v", c.node, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("Generate(%T) = %q, want %q", c.node, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {
