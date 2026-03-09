@@ -273,6 +273,22 @@ func TestParseParenPrecedence(t *testing.T) {
 	}
 }
 
+func TestLeftAssocSubtraction(t *testing.T) {
+	toks, _ := tokens.Tokenize("5-3-1", tokens.DefaultConfig())
+	p := parser.New(toks, nil)
+	node, err := p.ParseExpr(0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sub, ok := node.(*ast.Sub)
+	if !ok {
+		t.Fatalf("expected *ast.Sub as root, got %T", node)
+	}
+	if _, ok := sub.Left().(*ast.Sub); !ok {
+		t.Fatalf("expected left-associative (5-3)-1, left child is %T", sub.Left())
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),

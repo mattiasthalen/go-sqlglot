@@ -111,8 +111,8 @@ func (p *Parser) binopPrec() int {
 	case tokens.And:
 		return 2
 	case tokens.Eq, tokens.Neq, tokens.NullsafeEq,
-		tokens.Is, tokens.In, tokens.Like, tokens.Ilike,
-		tokens.SimilarTo, tokens.RLike, tokens.Between:
+		tokens.Like, tokens.Ilike,
+		tokens.SimilarTo, tokens.RLike:
 		return 4
 	case tokens.Lt, tokens.Lte, tokens.Gt, tokens.Gte:
 		return 5
@@ -259,11 +259,13 @@ func (p *Parser) ParseExpr(minPrec int) (ast.Node, error) {
 			break
 		}
 		op := p.Advance()
-		// Right-associative operators (^ and **) recurse at the same precedence;
-		// all other operators are left-associative and recurse at prec-1.
-		nextPrec := prec - 1
-		if op.Type == tokens.Caret || op.Type == tokens.DStar {
-			nextPrec = prec
+		// Left-associative: recurse at same precedence so the next same-level
+		// operator is NOT consumed by the right-side call (prec > minPrec breaks).
+		// Right-associative (^): recurse at prec-1 so the next same-level operator
+		// IS consumed by the right-side call.
+		nextPrec := prec
+		if op.Type == tokens.Caret {
+			nextPrec = prec - 1
 		}
 		right, err := p.ParseExpr(nextPrec)
 		if err != nil {
@@ -401,7 +403,10 @@ func (p *Parser) parseFuncCall(name string) (ast.Node, error) {
 	// Offer dialect hook first.
 	if p.dialect != nil {
 		if node, handled, err := p.dialect.ParseSpecialFunction(p, name); handled {
-			return node, err
+			if err != nil {
+				return nil, err
+			}
+			return node, nil
 		}
 	}
 
