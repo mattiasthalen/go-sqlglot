@@ -446,6 +446,94 @@ func TestCompoundOpRespectsMinPrec(t *testing.T) {
 	}
 }
 
+// helper: parse a full SQL statement
+func parseStmt(t *testing.T, sql string) ast.Node {
+	t.Helper()
+	toks, err := tokens.Tokenize(sql, tokens.DefaultConfig())
+	if err != nil {
+		t.Fatalf("tokenize: %v", err)
+	}
+	p := parser.New(toks, nil)
+	node, err := p.Parse()
+	if err != nil {
+		t.Fatalf("parse %q: %v", sql, err)
+	}
+	return node
+}
+
+func TestParseSelectStar(t *testing.T) {
+	node := parseStmt(t, "SELECT * FROM t")
+	sel, ok := node.(*ast.Select)
+	if !ok {
+		t.Fatalf("expected *ast.Select, got %T", node)
+	}
+	if len(sel.Exprs()) != 1 {
+		t.Fatalf("expected 1 projection, got %d", len(sel.Exprs()))
+	}
+	if sel.GetFrom() == nil {
+		t.Fatal("Select.GetFrom() is nil")
+	}
+}
+
+func TestParseSelectWhere(t *testing.T) {
+	node := parseStmt(t, "SELECT a, b FROM t WHERE a = 1")
+	sel := node.(*ast.Select)
+	if sel.GetWhere() == nil {
+		t.Fatal("expected WHERE clause")
+	}
+}
+
+func TestParseSelectDistinct(t *testing.T) {
+	node := parseStmt(t, "SELECT DISTINCT id FROM users")
+	sel := node.(*ast.Select)
+	if !sel.Distinct() {
+		t.Fatal("expected DISTINCT")
+	}
+}
+
+func TestParseSelectAlias(t *testing.T) {
+	node := parseStmt(t, "SELECT a + b AS total FROM t")
+	sel := node.(*ast.Select)
+	if len(sel.Exprs()) != 1 {
+		t.Fatalf("expected 1 projection, got %d", len(sel.Exprs()))
+	}
+	// The projection should be an Alias wrapping an Add.
+	alias, ok := sel.Exprs()[0].(*ast.Alias)
+	if !ok {
+		t.Fatalf("expected *ast.Alias, got %T", sel.Exprs()[0])
+	}
+	if _, ok := alias.This().(*ast.Add); !ok {
+		t.Fatalf("expected *ast.Add inside Alias, got %T", alias.This())
+	}
+}
+
+func TestParseSelectGroupByHaving(t *testing.T) {
+	node := parseStmt(t, "SELECT dept, COUNT(*) FROM emp GROUP BY dept HAVING COUNT(*) > 1")
+	sel := node.(*ast.Select)
+	grp, _ := sel.GetArgs()["group"].(*ast.Group)
+	if grp == nil {
+		t.Fatal("expected GROUP BY")
+	}
+	hav, _ := sel.GetArgs()["having"].(*ast.Having)
+	if hav == nil {
+		t.Fatal("expected HAVING")
+	}
+}
+
+func TestParseSelectOrderLimit(t *testing.T) {
+	node := parseStmt(t, "SELECT * FROM t ORDER BY id DESC LIMIT 10 OFFSET 5")
+	sel := node.(*ast.Select)
+	if sel.GetOrder() == nil {
+		t.Fatal("expected ORDER BY")
+	}
+	if sel.GetLimit() == nil {
+		t.Fatal("expected LIMIT")
+	}
+	if sel.GetOffset() == nil {
+		t.Fatal("expected OFFSET")
+	}
+}
+
 func TestPeekAndAdvance(t *testing.T) {
 	p := parser.New([]tokens.Token{
 		tok(tokens.Select, "SELECT"),

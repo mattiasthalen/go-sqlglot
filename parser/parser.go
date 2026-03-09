@@ -713,3 +713,469 @@ func (p *Parser) parseDataType() (*ast.DataType, error) {
 
 	return dt, nil
 }
+
+// Parse parses one SQL statement and returns the AST root.
+func (p *Parser) Parse() (ast.Node, error) {
+	t := p.Peek()
+	switch t.Type {
+	case tokens.Select, tokens.With:
+		return p.parseSelectStmt()
+	case tokens.Insert:
+		return p.parseInsert()
+	case tokens.Update:
+		return p.parseUpdate()
+	case tokens.Delete:
+		return p.parseDelete()
+	case tokens.Create:
+		return p.parseCreate()
+	case tokens.Drop:
+		return p.parseDrop()
+	case tokens.Alter:
+		return p.parseAlter()
+	case tokens.Truncate:
+		return p.parseTruncate()
+	default:
+		return nil, p.errorf("unsupported statement starting with %v (%q)", t.Type, t.Text)
+	}
+}
+
+// Stubs for statement types not yet implemented.
+func (p *Parser) parseInsert() (ast.Node, error)   { return nil, p.errorf("not yet implemented: INSERT") }
+func (p *Parser) parseUpdate() (ast.Node, error)   { return nil, p.errorf("not yet implemented: UPDATE") }
+func (p *Parser) parseDelete() (ast.Node, error)   { return nil, p.errorf("not yet implemented: DELETE") }
+func (p *Parser) parseCreate() (ast.Node, error)   { return nil, p.errorf("not yet implemented: CREATE") }
+func (p *Parser) parseDrop() (ast.Node, error)     { return nil, p.errorf("not yet implemented: DROP") }
+func (p *Parser) parseAlter() (ast.Node, error)    { return nil, p.errorf("not yet implemented: ALTER") }
+func (p *Parser) parseTruncate() (ast.Node, error) { return nil, p.errorf("not yet implemented: TRUNCATE") }
+
+// parseSelectStmt handles an optional WITH clause then delegates to parseQueryBody.
+func (p *Parser) parseSelectStmt() (ast.Node, error) {
+	var with *ast.With
+	if p.check(tokens.With) {
+		var err error
+		with, err = p.parseWith()
+		if err != nil {
+			return nil, err
+		}
+	}
+	sel, err := p.parseQueryBody()
+	if err != nil {
+		return nil, err
+	}
+	if with != nil {
+		sel.SetArg("with", with)
+	}
+	return sel, nil
+}
+
+// parseWith parses WITH [RECURSIVE] cte1 AS (...), cte2 AS (...).
+func (p *Parser) parseWith() (*ast.With, error) {
+	p.Advance() // consume WITH
+	w := &ast.With{}
+	if _, ok := p.match(tokens.Recursive); ok {
+		w.SetArg("recursive", true)
+	}
+	var ctes []ast.Node
+	for {
+		name := p.Advance().Text
+		if _, err := p.expect(tokens.Alias); err != nil { // AS
+			return nil, err
+		}
+		if _, err := p.expect(tokens.LParen); err != nil {
+			return nil, err
+		}
+		body, err := p.parseQueryBody()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		cte := &ast.CTE{}
+		cte.SetArg("this", ast.Ident(name))
+		cte.SetArg("query", body)
+		ctes = append(ctes, cte)
+		if _, ok := p.match(tokens.Comma); !ok {
+			break
+		}
+	}
+	w.SetArg("expressions", ctes)
+	return w, nil
+}
+
+// parseQueryBody parses SELECT ... [set-op SELECT ...].
+func (p *Parser) parseQueryBody() (ast.Node, error) {
+	sel, err := p.parseSelect()
+	if err != nil {
+		return nil, err
+	}
+	var left ast.Node = sel
+
+	for {
+		var setOp ast.Node
+		switch p.PeekType() {
+		case tokens.Union:
+			p.Advance()
+			distinct := true
+			if _, ok := p.match(tokens.All); ok {
+				distinct = false
+			}
+			right, err := p.parseSelect()
+			if err != nil {
+				return nil, err
+			}
+			u := &ast.Union{}
+			u.SetThis(left)
+			u.SetArg("expression", right)
+			u.SetArg("distinct", distinct)
+			setOp = u
+		case tokens.Except:
+			p.Advance()
+			distinct := true
+			if _, ok := p.match(tokens.All); ok {
+				distinct = false
+			}
+			right, err := p.parseSelect()
+			if err != nil {
+				return nil, err
+			}
+			e := &ast.Except{}
+			e.SetThis(left)
+			e.SetArg("expression", right)
+			e.SetArg("distinct", distinct)
+			setOp = e
+		case tokens.Intersect:
+			p.Advance()
+			distinct := true
+			if _, ok := p.match(tokens.All); ok {
+				distinct = false
+			}
+			right, err := p.parseSelect()
+			if err != nil {
+				return nil, err
+			}
+			i := &ast.Intersect{}
+			i.SetThis(left)
+			i.SetArg("expression", right)
+			i.SetArg("distinct", distinct)
+			setOp = i
+		}
+		if setOp == nil {
+			break
+		}
+		left = setOp
+	}
+	return left, nil
+}
+
+// parseSelect parses a single SELECT clause.
+func (p *Parser) parseSelect() (*ast.Select, error) {
+	if _, err := p.expect(tokens.Select); err != nil {
+		return nil, err
+	}
+
+	sel := &ast.Select{}
+
+	// DISTINCT / ALL
+	if _, ok := p.match(tokens.Distinct); ok {
+		sel.SetArg("distinct", true)
+	} else {
+		p.match(tokens.All)
+	}
+
+	// Projection list
+	var exprs []ast.Node
+	for {
+		expr, err := p.parseSelectExpr()
+		if err != nil {
+			return nil, err
+		}
+		exprs = append(exprs, expr)
+		if _, ok := p.match(tokens.Comma); !ok {
+			break
+		}
+	}
+	sel.SetArg("expressions", exprs)
+
+	// FROM
+	if _, ok := p.match(tokens.From); ok {
+		from, err := p.parseFrom()
+		if err != nil {
+			return nil, err
+		}
+		sel.SetArg("from", from)
+	}
+
+	// WHERE
+	if _, ok := p.match(tokens.Where); ok {
+		cond, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		w := &ast.Where{}
+		w.SetThis(cond)
+		sel.SetArg("where", w)
+	}
+
+	// GROUP BY
+	if _, ok := p.match(tokens.GroupBy); ok {
+		var gcols []ast.Node
+		for {
+			gc, err := p.ParseExpr(0)
+			if err != nil {
+				return nil, err
+			}
+			gcols = append(gcols, gc)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+		g := &ast.Group{}
+		g.SetArg("expressions", gcols)
+		sel.SetArg("group", g)
+	}
+
+	// HAVING
+	if _, ok := p.match(tokens.Having); ok {
+		hcond, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		h := &ast.Having{}
+		h.SetThis(hcond)
+		sel.SetArg("having", h)
+	}
+
+	// ORDER BY
+	if _, ok := p.match(tokens.OrderBy); ok {
+		var ords []ast.Node
+		for {
+			ord, err := p.parseOrdered()
+			if err != nil {
+				return nil, err
+			}
+			ords = append(ords, ord)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+		o := &ast.Order{}
+		o.SetArg("expressions", ords)
+		sel.SetArg("order", o)
+	}
+
+	// LIMIT
+	if _, ok := p.match(tokens.Limit); ok {
+		lim, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		l := &ast.Limit{}
+		l.SetThis(lim)
+		sel.SetArg("limit", l)
+	}
+
+	// OFFSET
+	if _, ok := p.match(tokens.Offset); ok {
+		off, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, err
+		}
+		o := &ast.Offset{}
+		o.SetThis(off)
+		sel.SetArg("offset", o)
+	}
+
+	return sel, nil
+}
+
+// parseSelectExpr parses one projection item: expr [AS alias].
+func (p *Parser) parseSelectExpr() (ast.Node, error) {
+	expr, err := p.ParseExpr(0)
+	if err != nil {
+		return nil, err
+	}
+	// Optional alias: expr AS name
+	if _, ok := p.match(tokens.Alias); ok {
+		aliasTok := p.Advance()
+		a := &ast.Alias{}
+		a.SetThis(expr)
+		a.SetArg("alias", ast.Ident(aliasTok.Text))
+		return a, nil
+	}
+	return expr, nil
+}
+
+// parseFrom parses the FROM clause including JOINs.
+func (p *Parser) parseFrom() (*ast.From, error) {
+	tbl, err := p.parseTableRef()
+	if err != nil {
+		return nil, err
+	}
+	from := &ast.From{}
+	from.SetThis(tbl)
+
+	// JOINs — collect into a slice and store as "joins"
+	var joins []ast.Node
+	for {
+		join, ok, err := p.tryParseJoin()
+		if err != nil {
+			return nil, err
+		}
+		if !ok {
+			break
+		}
+		joins = append(joins, join)
+	}
+	if len(joins) > 0 {
+		from.SetArg("joins", joins)
+	}
+	return from, nil
+}
+
+// parseTableRef parses a table reference with optional alias.
+func (p *Parser) parseTableRef() (ast.Node, error) {
+	// Subquery
+	if p.check(tokens.LParen) {
+		p.Advance()
+		inner, err := p.parseQueryBody()
+		if err != nil {
+			return nil, err
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, err
+		}
+		sq := &ast.Subquery{}
+		sq.SetThis(inner)
+		// Optional alias
+		if _, ok := p.match(tokens.Alias); ok {
+			aliasTok := p.Advance()
+			sq.SetArg("alias", ast.Ident(aliasTok.Text))
+		}
+		return sq, nil
+	}
+
+	// Plain table name (possibly qualified: schema.table)
+	nameTok := p.Advance()
+	tableName := nameTok.Text
+	if p.check(tokens.Dot) {
+		p.Advance()
+		tableName += "." + p.Advance().Text
+	}
+	tbl := &ast.Table{}
+	tbl.SetArg("this", ast.Ident(tableName))
+
+	// Optional alias: AS name or implicit alias
+	if _, ok := p.match(tokens.Alias); ok {
+		aliasTok := p.Advance()
+		ta := &ast.TableAlias{}
+		ta.SetArg("this", ast.Ident(aliasTok.Text))
+		tbl.SetArg("alias", ta)
+	} else if p.check(tokens.Identifier, tokens.Var) {
+		// Implicit alias: FROM t alias_name
+		aliasTok := p.Advance()
+		ta := &ast.TableAlias{}
+		ta.SetArg("this", ast.Ident(aliasTok.Text))
+		tbl.SetArg("alias", ta)
+	}
+	return tbl, nil
+}
+
+// tryParseJoin attempts to parse one JOIN clause.
+// Returns (join, true, nil) on success, (nil, false, nil) if no JOIN keyword.
+func (p *Parser) tryParseJoin() (*ast.Join, bool, error) {
+	var kind string
+	switch p.PeekType() {
+	case tokens.Join:
+		p.Advance()
+		kind = "INNER"
+	case tokens.Inner:
+		p.Advance()
+		kind = "INNER"
+		if _, err := p.expect(tokens.Join); err != nil {
+			return nil, false, err
+		}
+	case tokens.Left:
+		p.Advance()
+		p.match(tokens.Outer)
+		kind = "LEFT"
+		if _, err := p.expect(tokens.Join); err != nil {
+			return nil, false, err
+		}
+	case tokens.Right:
+		p.Advance()
+		p.match(tokens.Outer)
+		kind = "RIGHT"
+		if _, err := p.expect(tokens.Join); err != nil {
+			return nil, false, err
+		}
+	case tokens.Full:
+		p.Advance()
+		p.match(tokens.Outer)
+		kind = "FULL"
+		if _, err := p.expect(tokens.Join); err != nil {
+			return nil, false, err
+		}
+	case tokens.Cross:
+		p.Advance()
+		kind = "CROSS"
+		if _, err := p.expect(tokens.Join); err != nil {
+			return nil, false, err
+		}
+	default:
+		return nil, false, nil
+	}
+
+	tbl, err := p.parseTableRef()
+	if err != nil {
+		return nil, false, err
+	}
+
+	j := &ast.Join{}
+	j.SetThis(tbl)
+	j.SetArg("kind", kind)
+
+	if _, ok := p.match(tokens.On); ok {
+		cond, err := p.ParseExpr(0)
+		if err != nil {
+			return nil, false, err
+		}
+		j.SetArg("on", cond)
+	} else if _, ok := p.match(tokens.Using); ok {
+		if _, err := p.expect(tokens.LParen); err != nil {
+			return nil, false, err
+		}
+		var cols []ast.Node
+		for {
+			c, err := p.ParseExpr(0)
+			if err != nil {
+				return nil, false, err
+			}
+			cols = append(cols, c)
+			if _, ok := p.match(tokens.Comma); !ok {
+				break
+			}
+		}
+		if _, err := p.expect(tokens.RParen); err != nil {
+			return nil, false, err
+		}
+		j.SetArg("using", cols)
+	}
+	return j, true, nil
+}
+
+// parseOrdered parses one ORDER BY item: expr [ASC|DESC].
+func (p *Parser) parseOrdered() (*ast.Ordered, error) {
+	expr, err := p.ParseExpr(0)
+	if err != nil {
+		return nil, err
+	}
+	o := &ast.Ordered{}
+	o.SetThis(expr)
+	if _, ok := p.match(tokens.Desc); ok {
+		o.SetArg("desc", true)
+	} else {
+		p.match(tokens.Asc)
+	}
+	return o, nil
+}
