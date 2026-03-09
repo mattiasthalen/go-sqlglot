@@ -291,6 +291,19 @@ func (g *Generator) generate(b *strings.Builder, node ast.Node) error {
 	case *ast.RLike:      return g.generateBinary(b, n.Left(), n.Right(), "RLIKE")
 	case *ast.Is:         return g.generateBinary(b, n.Left(), n.Right(), "IS")
 	case *ast.Escape:     return g.generateBinary(b, n.Left(), n.Right(), "ESCAPE")
+	// DDL
+	case *ast.Create:
+		return g.generateCreate(b, n)
+	case *ast.Schema:
+		return g.generateSchema(b, n)
+	case *ast.ColumnDef:
+		return g.generateColumnDef(b, n)
+	case *ast.Drop:
+		return g.generateDrop(b, n)
+	case *ast.Truncate:
+		return g.generateTruncate(b, n)
+	case *ast.Alter:
+		return g.generateAlter(b, n)
 	// DML
 	case *ast.Insert:
 		return g.generateInsert(b, n)
@@ -493,6 +506,133 @@ func (g *Generator) generateAlias(b *strings.Builder, n *ast.Alias) error {
 	}
 	b.WriteString(" AS ")
 	b.WriteString(n.AliasName())
+	return nil
+}
+
+func (g *Generator) generateCreate(b *strings.Builder, n *ast.Create) error {
+	b.WriteString("CREATE ")
+	kind := n.Kind()
+	b.WriteString(kind)
+	b.WriteByte(' ')
+	if n.IfNotExists() {
+		b.WriteString("IF NOT EXISTS ")
+	}
+	switch kind {
+	case "TABLE":
+		schema, _ := n.This().(*ast.Schema)
+		return g.generateSchema(b, schema)
+	case "VIEW":
+		nameNode, _ := n.GetArgs()["this"].(ast.Node)
+		if err := g.generate(b, nameNode); err != nil {
+			return err
+		}
+		b.WriteString(" AS ")
+		body, _ := n.GetArgs()["expression"].(ast.Node)
+		return g.generate(b, body)
+	default:
+		nameNode, _ := n.GetArgs()["this"].(ast.Node)
+		return g.generate(b, nameNode)
+	}
+}
+
+func (g *Generator) generateSchema(b *strings.Builder, n *ast.Schema) error {
+	nameNode, _ := n.GetArgs()["this"].(*ast.Identifier)
+	if nameNode != nil {
+		b.WriteString(nameNode.Name())
+	}
+	cols := n.Exprs()
+	if len(cols) > 0 {
+		b.WriteString(" (")
+		for i, col := range cols {
+			if i > 0 {
+				b.WriteString(", ")
+			}
+			if err := g.generate(b, col); err != nil {
+				return err
+			}
+		}
+		b.WriteByte(')')
+	}
+	return nil
+}
+
+func (g *Generator) generateColumnDef(b *strings.Builder, n *ast.ColumnDef) error {
+	nameNode, _ := n.GetArgs()["this"].(*ast.Identifier)
+	if nameNode != nil {
+		b.WriteString(nameNode.Name())
+	}
+	b.WriteByte(' ')
+	if err := g.generateDataType(b, n.DataType()); err != nil {
+		return err
+	}
+	if pk, _ := n.GetArgs()["primary_key"].(bool); pk {
+		b.WriteString(" PRIMARY KEY")
+	}
+	if nn, _ := n.GetArgs()["not_null"].(bool); nn {
+		b.WriteString(" NOT NULL")
+	}
+	if ai, _ := n.GetArgs()["auto_increment"].(bool); ai {
+		b.WriteString(" AUTO_INCREMENT")
+	}
+	if uniq, _ := n.GetArgs()["unique"].(bool); uniq {
+		b.WriteString(" UNIQUE")
+	}
+	if def, ok := n.GetArgs()["default"].(ast.Node); ok && def != nil {
+		b.WriteString(" DEFAULT ")
+		if err := g.generate(b, def); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateDrop(b *strings.Builder, n *ast.Drop) error {
+	b.WriteString("DROP ")
+	b.WriteString(n.Kind())
+	b.WriteByte(' ')
+	if n.IfExists() {
+		b.WriteString("IF EXISTS ")
+	}
+	nameNode, _ := n.GetArgs()["this"].(*ast.Identifier)
+	if nameNode != nil {
+		b.WriteString(nameNode.Name())
+	}
+	if n.Cascade() {
+		b.WriteString(" CASCADE")
+	}
+	return nil
+}
+
+func (g *Generator) generateTruncate(b *strings.Builder, n *ast.Truncate) error {
+	b.WriteString("TRUNCATE TABLE ")
+	tables := n.Tables()
+	for i, tbl := range tables {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		if err := g.generate(b, tbl); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (g *Generator) generateAlter(b *strings.Builder, n *ast.Alter) error {
+	kind, _ := n.GetArgs()["kind"].(string)
+	b.WriteString("ALTER ")
+	b.WriteString(kind)
+	b.WriteByte(' ')
+	nameNode, _ := n.GetArgs()["this"].(*ast.Identifier)
+	if nameNode != nil {
+		b.WriteString(nameNode.Name())
+	}
+	actions := n.Actions()
+	for _, action := range actions {
+		b.WriteByte(' ')
+		if err := g.generate(b, action); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 

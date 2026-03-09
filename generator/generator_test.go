@@ -577,6 +577,141 @@ func TestDML(t *testing.T) {
 	}
 }
 
+func TestDDL(t *testing.T) {
+	g := generator.New(nil)
+	cases := []struct {
+		name string
+		node ast.Node
+		want string
+	}{
+		{
+			"create table",
+			func() ast.Node {
+				dt := &ast.DataType{}
+				dt.SetArg("this", "INT")
+				col := &ast.ColumnDef{}
+				col.SetArg("this", ast.Ident("id"))
+				col.SetArg("kind", dt)
+				col.SetArg("primary_key", true)
+				col.SetArg("not_null", true)
+
+				dt2 := &ast.DataType{}
+				dt2.SetArg("this", "VARCHAR")
+				dt2.AppendExpr(ast.NumberLit("100"))
+				col2 := &ast.ColumnDef{}
+				col2.SetArg("this", ast.Ident("name"))
+				col2.SetArg("kind", dt2)
+
+				schema := &ast.Schema{}
+				schema.SetArg("this", ast.Ident("users"))
+				schema.AppendExpr(col)
+				schema.AppendExpr(col2)
+
+				cr := &ast.Create{}
+				cr.SetArg("kind", "TABLE")
+				cr.SetThis(schema)
+				return cr
+			}(),
+			"CREATE TABLE users (id INT PRIMARY KEY NOT NULL, name VARCHAR(100))",
+		},
+		{
+			"create table if not exists",
+			func() ast.Node {
+				dt := &ast.DataType{}
+				dt.SetArg("this", "TEXT")
+				col := &ast.ColumnDef{}
+				col.SetArg("this", ast.Ident("body"))
+				col.SetArg("kind", dt)
+
+				schema := &ast.Schema{}
+				schema.SetArg("this", ast.Ident("posts"))
+				schema.AppendExpr(col)
+
+				cr := &ast.Create{}
+				cr.SetArg("kind", "TABLE")
+				cr.SetArg("exists", true)
+				cr.SetThis(schema)
+				return cr
+			}(),
+			"CREATE TABLE IF NOT EXISTS posts (body TEXT)",
+		},
+		{
+			"create view",
+			func() ast.Node {
+				cr := &ast.Create{}
+				cr.SetArg("kind", "VIEW")
+				cr.SetArg("this", ast.Ident("active_users"))
+				sel := ast.NewSelect(&ast.Star{})
+				from := &ast.From{}
+				from.SetThis(ast.Tbl("users"))
+				sel.SetArg("from", from)
+				w := &ast.Where{}
+				trueVal := &ast.Boolean{}
+				trueVal.SetArg("this", true)
+				w.SetThis(ast.Eq(ast.Col("", "active"), trueVal))
+				sel.SetArg("where", w)
+				cr.SetArg("expression", sel)
+				return cr
+			}(),
+			"CREATE VIEW active_users AS SELECT * FROM users WHERE active = TRUE",
+		},
+		{
+			"drop table",
+			func() ast.Node {
+				dr := &ast.Drop{}
+				dr.SetArg("kind", "TABLE")
+				dr.SetArg("this", ast.Ident("users"))
+				return dr
+			}(),
+			"DROP TABLE users",
+		},
+		{
+			"drop table if exists cascade",
+			func() ast.Node {
+				dr := &ast.Drop{}
+				dr.SetArg("kind", "TABLE")
+				dr.SetArg("this", ast.Ident("users"))
+				dr.SetArg("exists", true)
+				dr.SetArg("cascade", true)
+				return dr
+			}(),
+			"DROP TABLE IF EXISTS users CASCADE",
+		},
+		{
+			"truncate",
+			func() ast.Node {
+				tr := &ast.Truncate{}
+				tr.SetArg("this", []ast.Node{ast.Tbl("users")})
+				return tr
+			}(),
+			"TRUNCATE TABLE users",
+		},
+		{
+			"alter table",
+			func() ast.Node {
+				al := &ast.Alter{}
+				al.SetArg("kind", "TABLE")
+				al.SetArg("this", ast.Ident("users"))
+				id := &ast.Identifier{}
+				id.SetArg("this", "ADD COLUMN age INT")
+				al.SetArg("actions", []ast.Node{id})
+				return al
+			}(),
+			"ALTER TABLE users ADD COLUMN age INT",
+		},
+	}
+	for _, c := range cases {
+		got, err := g.Generate(c.node)
+		if err != nil {
+			t.Errorf("%s: error: %v", c.name, err)
+			continue
+		}
+		if got != c.want {
+			t.Errorf("%s:\n got  %q\n want %q", c.name, got, c.want)
+		}
+	}
+}
+
 func TestLiterals(t *testing.T) {
 	g := generator.New(nil)
 	cases := []struct {
